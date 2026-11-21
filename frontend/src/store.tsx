@@ -20,7 +20,8 @@ export type Route =
   | { name: "commuterSetup" }
   | { name: "lock" }
   | { name: "commuterAlert"; id: string }
-  | { name: "connection"; id: string };
+  | { name: "connection"; id: string }
+  | { name: "personalize" };
 
 const ALERT_POLL_MS = 5000;
 

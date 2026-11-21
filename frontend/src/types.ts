@@ -91,7 +91,18 @@ export interface Preferences {
   stroller_bike?: boolean;  // (UI)
   few_transfers?: boolean;  // (UI)
   seat?: boolean;           // (UI)
+  // (UI) answers of the "Personalize" questions (see lib/personalize.ts)
+  stop_choice?: StopChoice | null;
+  trade_off?: TradeOff | null;
+  travel_with?: TravelWith | null;
 }
+
+/** "Where can you get off?" */
+export type StopChoice = "exact" | "walk" | "pickup";
+/** "To save 20 min, you'd accept…" */
+export type TradeOff = "anything" | "changes" | "wait" | "simplest";
+/** "You're travelling with…" */
+export type TravelWith = "nothing" | "luggage" | "bike" | "reduced_mobility";
 
 export const DEFAULT_PREFERENCES: Preferences = {
   destination_radius_km: 10,

@@ -12,6 +12,7 @@ import CommuterSetup from "./screens/CommuterSetup";
 import LockScreen, { NotificationCard } from "./screens/LockScreen";
 import CommuterAlert from "./screens/CommuterAlert";
 import ConnectionDetail from "./screens/ConnectionDetail";
+import Personalize from "./screens/Personalize";
 import DemoPanel from "./demo/DemoPanel";
 import { Icon } from "./components/ui";
 
@@ -26,6 +27,7 @@ function Screen() {
     case "lock": return <LockScreen />;
     case "commuterAlert": return <CommuterAlert id={route.id} />;
     case "connection": return <ConnectionDetail id={route.id} />;
+    case "personalize": return <Personalize />;
   }
 }
 
@@ -53,7 +55,7 @@ const TABS = [
 
 function TabBar() {
   const { reset, showToast, route } = useStore();
-  const activeId = ["disruption", "list", "details", "connection"].includes(route.name) ? "plan" : "trips";
+  const activeId = ["disruption", "list", "details", "connection", "personalize"].includes(route.name) ? "plan" : "trips";
   return (
     <nav className="tabbar">
       {TABS.map((t) => {

@@ -40,6 +40,12 @@ const paths: Record<string, ReactNode> = {
   bus: <><rect x="5" y="3" width="14" height="15" rx="3" /><path d="M5 10h14M8 21v-3M16 21v-3" /></>,
   target: <><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.6" fill="currentColor" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" /></>,
   ring: <><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="4" /></>,
+  // personalize answers
+  "check-plain": <path d="M5 12.5l4.5 4.5L19 7.5" />,
+  car: <><path d="M4 16.5V12l2.2-5h11.6l2.2 5v4.5z" /><path d="M4 12h16" /><circle cx="7.5" cy="16.5" r="1.8" fill="#fff" /><circle cx="16.5" cy="16.5" r="1.8" fill="#fff" /></>,
+  luggage: <><rect x="6" y="7" width="12" height="13" rx="2" /><path d="M9.5 7V4h5v3M10 11v5M14 11v5" /></>,
+  bike: <><circle cx="6" cy="16" r="3.5" /><circle cx="18" cy="16" r="3.5" /><path d="M6 16l4-7h5l3 7M10 9l3.5 7M8.5 6h3" /></>,
+  wheelchair: <><circle cx="11" cy="4.5" r="1.6" fill="currentColor" stroke="none" /><path d="M11 7v6h5l2 5" /><path d="M8.5 10.5a5.5 5.5 0 1 0 6.8 7.3" /></>,
 };
 
 export function Icon({ name, size = 20, className }: { name: string; size?: number; className?: string }) {
@@ -63,16 +69,18 @@ function BrandMark() {
 // ---------------------------------------------------------------------------
 // Red top bar
 // ---------------------------------------------------------------------------
-export function Header({ title, onBack, children }: { title: string; onBack?: () => void; children?: ReactNode }) {
+export function Header({ title, onBack, right, children }: {
+  title: string; onBack?: () => void; right?: ReactNode; children?: ReactNode;
+}) {
   return (
     <>
     <header className="app-header">
-      <div className="app-header-row">
+      <div className={`app-header-row ${right ? "has-action" : ""}`}>
         <span className="hdr-side">
           {onBack && <button className="icon-btn" onClick={onBack} aria-label="Back"><Icon name="back" size={28} /></button>}
         </span>
         <h1>{title}</h1>
-        <span className="hdr-side right"><BrandMark /></span>
+        <span className="hdr-side right">{right ?? <BrandMark />}</span>
       </div>
       {children}
     </header>

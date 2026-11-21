@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useStore } from "../store";
 import type { Preferences } from "../types";
 import { BottomSheet, Chip } from "../components/ui";
+import { syncAnswers } from "../lib/personalize";
 
 export function preferencesSummary(p: Preferences): string {
   const parts: string[] = [];
@@ -23,7 +24,7 @@ export default function PersonaliseSheet() {
   const noNeeds = !draft.accessible_only && !draft.luggage && !draft.stroller_bike;
 
   function apply() {
-    setPrefs(draft);
+    setPrefs(syncAnswers(draft));
     setSheetOpen(false);
     showToast("Options updated");
   }

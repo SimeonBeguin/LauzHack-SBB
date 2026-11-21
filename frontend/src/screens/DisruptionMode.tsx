@@ -1,14 +1,19 @@
 // "Need help": built for a tired, stressed traveller.
 // 1. My journey and what is happening, in one sentence.
 // 2. One question: when do you need to be there?
-// 3. One clear answer (our advice), with a plain-word chance to make it.
+// 3. One clear answer (our advice), with a plain-word chance to make it. After the
+//    "Personalize" questions (top right), it is the one itinerary picked for this
+//    traveller (lib/personalize.ts), with the reasons.
 // 4. Two or three other options. Everything else is one tap away.
+import { useEffect, useRef } from "react";
 import { useStore } from "../store";
 import type { Alternative, DisruptionStatus, Journey } from "../types";
 import { atTime, durationLabel, hhmm, minutesBetween, swissDay } from "../lib/format";
 import { otherOptions, rankedOptions } from "../lib/ranking";
 import { ChanceBadge, Chip, ConnectionCard, Header, Icon, labelFor, LineBadge, PillRow, SectionTitle } from "../components/ui";
 import { preferencesSummary } from "./PersonaliseSheet";
+import { answersOf, answersSummary, personalPick, type PersonalPick } from "../lib/personalize";
+import { focusBestOption } from "./Personalize";
 
 /** Deadline choices: the planned arrival + 30, 60 and 90 min, rounded up to a quarter hour. */
 function deadlineChoices(arrival: string): string[] {
@@ -90,32 +95,65 @@ function DeadlineQuestion({ destination, arrival }: { destination: string; arriv
   );
 }
 
-function Advice({ alt, deadline, onOpen }: { alt: Alternative; deadline: string | null; onOpen: () => void }) {
+function Advice({ alt, deadline, onOpen, pick }: {
+  alt: Alternative; deadline: string | null; onOpen: () => void; pick?: PersonalPick | null;
+}) {
   const late = deadline && alt.on_time_probability != null && alt.on_time_probability < 0.3;
   return (
     <ConnectionCard alt={alt} deadline={deadline} onOpen={onOpen} highlight noTab>
       <span className="advice-extra">
         <ChanceBadge big label={labelFor(alt)} suffix={deadline ? `to arrive by ${hhmm(deadline)}` : undefined} />
-        <span className="muted">{alt.certainty_reason}.</span>
+        {pick ? (
+          <span className="pz-reasons">
+            {pick.lastMile && (
+              <span className="pz-arrive">At your destination around <b>{hhmm(pick.arrivalAtDestination)}</b></span>
+            )}
+            {pick.reasons.map((r) => <span key={r} className="pz-reason"><Icon name="check-plain" size={16} />{r}</span>)}
+            {pick.compromise && <span className="warn-line">{pick.compromise}</span>}
+          </span>
+        ) : (
+          <span className="muted">{alt.certainty_reason}.</span>
+        )}
         {late && <span className="warn-line">No option gets you there by {hhmm(deadline)}. This is the earliest you can arrive.</span>}
       </span>
     </ConnectionCard>
   );
 }
 
+function PersonalizeButton({ done, onClick }: { done: boolean; onClick: () => void }) {
+  return (
+    <button className={`hdr-action ${done ? "done" : ""}`} onClick={onClick}
+      aria-label={done ? "Personalize (answered, change answers)" : "Personalize"}>
+      {done && <Icon name="check-plain" size={15} />}Personalize
+    </button>
+  );
+}
+
 export default function DisruptionMode() {
   const { status, alternatives, back, push, prefs, setSheetOpen, loading } = useStore();
-  if (!status || !alternatives) return <Header title="Need help" onBack={back} />;
+  const answers = answersOf(prefs);
+  const personalize = <PersonalizeButton done={!!answers} onClick={() => push({ name: "personalize" })} />;
+  const bestRef = useRef<HTMLHeadingElement | null>(null);
+  const ready = !!status && !!alternatives && !loading;
+  // Back from the Personalize questions: show the chosen itinerary right away.
+  useEffect(() => {
+    if (!ready || !focusBestOption.current || !bestRef.current) return;
+    focusBestOption.current = false;
+    bestRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [ready]);
+  if (!status || !alternatives) return <Header title="Need help" onBack={back} right={personalize} />;
 
   const j = status.journey;
-  const advice = rankedOptions(alternatives, prefs)[0] ?? null;
+  // With the Personalize answers: one itinerary picked for this traveller.
+  const pick = answers ? personalPick(alternatives, prefs, status, answers) : null;
+  const advice = pick?.alt ?? rankedOptions(alternatives, prefs)[0] ?? null;
   const others = otherOptions(alternatives, prefs, advice);
   const change = status.changes?.[0];
   const open = (a: Alternative) => push({ name: "connection", id: a.id });
 
   return (
     <>
-      <Header title="Need help" onBack={back} />
+      <Header title="Need help" onBack={back} right={personalize} />
       <div className={`content overlap ${loading ? "is-loading" : ""}`}>
         {j && <JourneySummary j={j} status={status} />}
 
@@ -127,8 +165,17 @@ export default function DisruptionMode() {
 
         {advice && (
           <>
-            <SectionTitle>Our advice</SectionTitle>
-            <Advice alt={advice} deadline={prefs.deadline} onOpen={() => open(advice)} />
+            <h2 className="section-title pz-anchor" ref={bestRef}>{pick ? "Best for you" : "Our advice"}</h2>
+            <Advice alt={advice} deadline={prefs.deadline} onOpen={() => open(advice)} pick={pick} />
+            {answers ? (
+              <button className="link pz-change" onClick={() => push({ name: "personalize" })}>
+                <span>Based on: {answersSummary(answers)}</span> <span className="pz-change-cta">Change</span>
+              </button>
+            ) : (
+              <button className="link pz-change" onClick={() => push({ name: "personalize" })}>
+                Answer 3 questions to get the best option for you <Icon name="chevron" size={16} />
+              </button>
+            )}
           </>
         )}
 
