@@ -1,85 +1,80 @@
-// Detailed reopening estimate. The official SBB time stays the headline; our
+// "When will trains run again?" on the Details page. Made for anyone, not for
+// statisticians: one time line (now, SBB's time, the most likely range) and a
+// few "x in 10" answers. The official SBB time stays the headline; our
 // statistics only add a margin and never replace it.
-import { useState } from "react";
-import type { DisruptionStatus, EndProbability, ReopeningEstimate } from "../types";
-import { hhmm, pct } from "../lib/format";
+import type { DisruptionStatus, ReopeningEstimate } from "../types";
+import { hhmm } from "../lib/format";
 import { inTen } from "../lib/chance";
 import { Icon } from "./ui";
 
-const RELIABILITY: Record<string, string> = { good: "good", fair: "fair", low: "low" };
+const ms = (iso: string) => new Date(iso).getTime();
 
-function pointAt(points: EndProbability[], iso: string | null | undefined) {
-  if (!iso) return undefined;
-  return points.find((p) => p.time === iso);
-}
+/** A single time line: now on the left, the most likely range shaded, SBB's time pinned. */
+function TimeRange({ e, now }: { e: ReopeningEstimate; now: string }) {
+  const from = e.likely_end_earliest, to = e.likely_end_latest;
+  if (!from || !to) return null;
+  const t0 = ms(now);
+  const ends = [to, e.margin_until, e.official_end].filter(Boolean).map((x) => ms(x!));
+  const t1 = Math.ceil((Math.max(...ends) + 20 * 60_000) / 1_800_000) * 1_800_000; // next half hour
+  const W = 320, L = 10, R = 10, TRACK_Y = 40, TRACK_H = 14;
+  const x = (t: number) => L + (Math.min(Math.max(t, t0), t1) - t0) / (t1 - t0) * (W - L - R);
 
-/** Cumulative chance that the line has reopened, from now to the last point. */
-function ProbabilityChart({ estimate, now }: { estimate: ReopeningEstimate; now: string }) {
-  const [hover, setHover] = useState<number | null>(null);
-  const pts = estimate.probabilities ?? [];
-  if (pts.length < 2) return null;
-
-  const W = 320, H = 112, L = 8, R = 8, T = 22, B = 24;
-  const t0 = new Date(now).getTime();
-  const t1 = new Date(pts[pts.length - 1].time).getTime();
-  const x = (iso: string) => L + ((new Date(iso).getTime() - t0) / (t1 - t0)) * (W - L - R);
-  const y = (p: number) => T + (1 - p) * (H - T - B);
-
-  const line = [[x(now), y(0)], ...pts.map((p) => [x(p.time), y(p.probability_ended)])];
-  const linePath = line.map(([a, b], i) => `${i ? "L" : "M"}${a.toFixed(1)},${b.toFixed(1)}`).join(" ");
-  const areaPath = `${linePath} L${line[line.length - 1][0].toFixed(1)},${y(0)} L${line[0][0].toFixed(1)},${y(0)} Z`;
-
-  // Half-hour ticks between now and the end
-  const ticks: string[] = [];
-  const first = new Date(t0);
-  first.setMinutes(first.getMinutes() < 30 ? 30 : 60, 0, 0);
-  for (let t = first.getTime(); t <= t1; t += 30 * 60_000) ticks.push(new Date(t).toISOString());
-  const labelled = new Set([estimate.official_end, estimate.margin_until]);
-  const official = estimate.official_end && new Date(estimate.official_end).getTime() <= t1 ? estimate.official_end : null;
+  const hours: number[] = [];
+  for (let t = Math.ceil(t0 / 3_600_000) * 3_600_000; t <= t1; t += 3_600_000) hours.push(t);
+  const official = e.official_end && ms(e.official_end) > t0 ? ms(e.official_end) : null;
+  const bandX = x(ms(from)), bandW = Math.max(6, x(ms(to)) - bandX);
 
   return (
-    <div className="chart">
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img"
-        aria-label={`Chance the line has reopened: ${pts.map((p) => `${pct(p.probability_ended)} before ${hhmm(p.time)}`).join(", ")}`}>
-        <line x1={L} x2={W - R} y1={y(0)} y2={y(0)} className="chart-axis" />
-        {ticks.map((t) => (
-          <g key={t}>
-            <line x1={x(t)} x2={x(t)} y1={y(0)} y2={y(0) + 4} className="chart-axis" />
-            <text x={x(t)} y={H - 6} className="chart-tick" textAnchor="middle">{hhmm(t)}</text>
-          </g>
-        ))}
+    <div className="timerange">
+      <svg viewBox={`0 0 ${W} 100`} width="100%" role="img"
+        aria-label={`Trains most likely run again between ${hhmm(from)} and ${hhmm(to)}.` +
+          (official ? ` SBB says ${hhmm(e.official_end)}.` : "")}>
+        <text x={bandX + bandW / 2} y={TRACK_Y - 10} textAnchor="middle" className="tr-band-label">
+          Most likely {hhmm(from)} – {hhmm(to)}
+        </text>
+        <rect x={L} y={TRACK_Y} width={W - L - R} height={TRACK_H} rx={TRACK_H / 2} className="tr-track" />
+        <rect x={bandX} y={TRACK_Y} width={bandW} height={TRACK_H} rx={TRACK_H / 2} className="tr-band" />
+        <circle cx={L + 3} cy={TRACK_Y + TRACK_H / 2} r={6} className="tr-now" />
+        <text x={L} y={TRACK_Y + TRACK_H + 20} className="tr-now-label">Now</text>
         {official && (
           <g>
-            <line x1={x(official)} x2={x(official)} y1={T - 10} y2={y(0)} className="chart-official" />
-            <text x={x(official)} y={T - 13} className="chart-official-label" textAnchor="middle">SBB {hhmm(official)}</text>
+            <line x1={x(official)} x2={x(official)} y1={TRACK_Y - 4} y2={TRACK_Y + TRACK_H + 6} className="tr-sbb" />
+            <text x={x(official)} y={TRACK_Y + TRACK_H + 20} textAnchor="middle" className="tr-sbb-label">
+              SBB {hhmm(e.official_end)}
+            </text>
           </g>
         )}
-        <path d={areaPath} className="chart-area" />
-        <path d={linePath} className="chart-line" />
-        {pts.map((p, i) => (
-          <g key={p.time} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}
-            onClick={() => setHover(hover === i ? null : i)}>
-            <circle cx={x(p.time)} cy={y(p.probability_ended)} r={14} fill="transparent" />
-            <circle cx={x(p.time)} cy={y(p.probability_ended)} r={hover === i ? 5.5 : 4} className="chart-dot" />
-            {(labelled.has(p.time) || hover === i) && (
-              <text x={x(p.time) + (p.time === official ? 7 : 0)} y={y(p.probability_ended) - 9}
-                textAnchor={i === pts.length - 1 ? "end" : p.time === official ? "start" : "middle"} className="chart-value">
-                {pct(p.probability_ended)}
-              </text>
-            )}
-          </g>
+        {hours.map((t) => (
+          <text key={t} x={x(t)} y={96} textAnchor="middle" className="tr-tick">{hhmm(new Date(t).toISOString())}</text>
         ))}
       </svg>
-      <div className="chart-caption">
-        {hover != null
-          ? <>{pct(pts[hover].probability_ended)} chance the line has reopened before {hhmm(pts[hover].time)}</>
-          : <>Chance the line is open again, by time of day</>}
-      </div>
     </div>
   );
 }
 
-/** Shown on the "Why and how long?" page only, for people who want to know more. */
+/** "Will trains run again by 19:12?" → ●●●●●●○○○○ 6 in 10. */
+function ChanceRows({ e }: { e: ReopeningEstimate }) {
+  const pts = e.probabilities ?? [];
+  if (!pts.length) return null;
+  return (
+    <div className="chance-rows">
+      <h4>Will trains run again by…</h4>
+      {pts.map((p) => {
+        const n = Math.min(10, Math.max(0, Math.round(p.probability_ended * 10)));
+        return (
+          <div key={p.time} className="chance-row">
+            <span className="cr-time">{hhmm(p.time)}{p.time === e.official_end && <small> SBB</small>}</span>
+            <span className="cr-dots" aria-hidden="true">
+              {Array.from({ length: 10 }, (_, i) => <i key={i} className={i < n ? "on" : ""} />)}
+            </span>
+            <span className="cr-text">{inTen(p.probability_ended)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function HowLongCard({ status, now }: { status: DisruptionStatus; now: string }) {
   const e = status.estimate;
   if (status.kind === "resolved") {
@@ -90,28 +85,24 @@ export default function HowLongCard({ status, now }: { status: DisruptionStatus;
       </section>
     );
   }
-  const pts = e.probabilities ?? [];
-  const atOfficial = pointAt(pts, e.official_end);
-  const atMargin = pointAt(pts, e.margin_until);
+  const atOfficial = e.probabilities?.find((p) => p.time === e.official_end);
 
   return (
     <section className="card estimate">
-      <h3>How long will it last?</h3>
+      <h3>When will trains run again?</h3>
       {e.official_end
         ? <p>SBB expects trains again <strong>{e.official_label} {hhmm(e.official_end)}</strong>.</p>
         : <p>SBB has not announced an end time yet.</p>}
-      {atOfficial && atMargin && (
-        <p>
-          We looked at {e.similar_incidents_count} similar incidents. The line was open again
-          by {hhmm(atOfficial.time)} in <strong>{inTen(atOfficial.probability_ended)}</strong> cases,
-          and by {hhmm(atMargin.time)} in <strong>{inTen(atMargin.probability_ended)}</strong> cases.
-        </p>
+      {atOfficial && atOfficial.probability_ended < 0.5 && (
+        <p>Often it takes longer: in similar cases, <strong>{Math.round((1 - atOfficial.probability_ended) * 10)} out of 10</strong> reopened later.</p>
       )}
       {e.margin_until && <p className="estimate-margin">To be safe, count on {hhmm(e.margin_until)}.</p>}
-      <ProbabilityChart estimate={e} now={now} />
+      <TimeRange e={e} now={now} />
+      <ChanceRows e={e} />
       <p className="fineprint">
-        <Icon name="info" size={14} /> This is an estimate, not a promise. SBB's time stays the official one.
-        {e.reliability && <> Reliability of the estimate: {RELIABILITY[e.reliability]}.</>}
+        <Icon name="info" size={14} /> {e.similar_incidents_count
+          ? `Based on ${e.similar_incidents_count} similar past incidents. `
+          : ""}An estimate, not a promise: SBB's time stays the official one.
       </p>
     </section>
   );
