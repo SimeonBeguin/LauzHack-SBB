@@ -126,10 +126,12 @@ VITE_USE_MOCKS=false npm run dev   # calls the backend, falls back to the mock o
 Open http://localhost:5173 on a laptop: the app shows inside a phone frame, with
 **presenter controls** next to it (press `D` to hide/show, `?clean` hides them at load).
 
-1. **Delay mode**: "Start from My trips" → *Need help*. Step through the real
+1. **Delay mode**: "Start from My trips" → *What should I do?*. The screen asks one
+   question ("When do you need to be in Bern?") and answers with one advice and
+   a plain-word chance to make it ("Very likely · 9 in 10"). Step through the real
    incident of 25.09.2026 (fire Puidoux – Vauderens) with "Next SBB update":
    16:52 interruption (~18:00) → 17:12 replacement buses → 17:46 SBB moves to
-   ~18:45 → 18:15 service resumed. Personalise and the category lists react live.
+   ~18:45 → 18:15 service resumed. Details and the chart sit behind "Why and how long?".
 2. **Commuter alerts** (separate): "Show lock screen", then send the 3 alerts
    (earlier train stuck → own train likely cancelled → line reopened). Tap a
    notification to open the alert. Tick "Also send real OS notifications" for a

@@ -101,87 +101,87 @@ const SECTION = "Puidoux – Vauderens and Lucens";
 // --- Alternatives, version 1 (clock 16:52) ---
 const viaNeuchatel = alt({
   id: "neuchatel", category: "fastest",
-  title: "Via Neuchâtel", subtitle: "IC 5 → RE · 1 transfer",
+  title: "Go via Neuchâtel", subtitle: "IC 5, change in Neuchâtel",
   legs: [
     leg("train", "IC 5", S.lausanne, S.neuchatel, "17:15", "17:55"),
     leg("train", "RE", S.neuchatel, S.bern, "18:04", "18:40"),
   ],
-  certainty: "safe", certainty_reason: "Does not use the blocked line",
+  certainty: "safe", certainty_reason: "Avoids the closed line",
   ticket_valid: true, ticket_hint: TICKET_OK, accessible: true,
 });
 
 const viaPayerne = alt({
   id: "payerne", category: "fastest",
-  title: "Via Yverdon and Payerne", subtitle: "IC 5 → S 30 → RE → IC 1 · 3 transfers",
+  title: "Go via Yverdon and Payerne", subtitle: "3 changes",
   legs: [
     leg("train", "IC 5", S.lausanne, S.yverdon, "17:15", "17:37"),
     leg("train", "S 30", S.yverdon, S.payerne, "17:50", "18:23"),
     leg("train", "RE", S.payerne, S.fribourg, "18:30", "18:52"),
     leg("train", "IC 1", S.fribourg, S.bern, "19:04", "19:26"),
   ],
-  certainty: "safe", certainty_reason: "Avoids the blocked section",
+  certainty: "safe", certainty_reason: "Avoids the closed line",
   ticket_valid: true, ticket_hint: TICKET_OK, accessible: true,
 });
 
 const replacementBus = alt({
   id: "bus", category: "fastest",
-  title: "Replacement bus", subtitle: "S 4 → bus Puidoux–Vauderens → RE → IC 1",
+  title: "Take the replacement bus", subtitle: "Bus between Puidoux and Vauderens",
   legs: [
     leg("train", "S 4", S.lausanne, S.puidoux, "17:24", "17:39"),
     leg("replacement_bus", "EV", S.puidoux, S.vauderens, "17:45", "18:25", 10),
     leg("train", "RE", S.vauderens, S.fribourg, "18:32", "18:48"),
     leg("train", "IC 1", S.fribourg, S.bern, "18:56", "19:18"),
   ],
-  certainty: "uncertain", certainty_reason: "Replacement bus times are not guaranteed",
+  certainty: "uncertain", certainty_reason: "Bus times depend on road traffic",
   warnings: ["Bus: +5 to +15 min (traffic)"],
   ticket_valid: true, ticket_hint: TICKET_OK, accessible: false,
 });
 
 const toBrunnen = alt({
   id: "brunnen", category: "nearby",
-  title: "Bern Brünnen Westside", subtitle: "Via Neuchâtel · S 5 · 5.2 km from Bern station",
+  title: "Get off at Bern Brünnen Westside", subtitle: "5 km from Bern station",
   legs: [
     leg("train", "IC 5", S.lausanne, S.neuchatel, "17:15", "17:55"),
     leg("train", "S 5", S.neuchatel, S.brunnen, "18:00", "18:27"),
   ],
   distance_to_destination_km: 5.2,
-  certainty: "likely", certainty_reason: "Short 5 min transfer in Neuchâtel",
+  certainty: "likely", certainty_reason: "Only 5 min to change in Neuchâtel",
   ticket_valid: true, ticket_hint: "Valid, Bern city zone included", accessible: true,
 });
 
 const toBumpliz = alt({
   id: "bumpliz", category: "nearby",
-  title: "Bern Bümpliz Nord", subtitle: "Via Neuchâtel · S 5 · 3.9 km from Bern station",
+  title: "Get off at Bern Bümpliz Nord", subtitle: "4 km from Bern station",
   legs: [
     leg("train", "IC 5", S.lausanne, S.neuchatel, "17:15", "17:55"),
     leg("train", "S 5", S.neuchatel, S.bumpliz, "18:00", "18:30"),
   ],
   distance_to_destination_km: 3.9,
-  certainty: "likely", certainty_reason: "Short 5 min transfer in Neuchâtel",
+  certainty: "likely", certainty_reason: "Only 5 min to change in Neuchâtel",
   ticket_valid: true, ticket_hint: "Valid, Bern city zone included", accessible: true,
 });
 
 const toKerzers = alt({
   id: "kerzers", category: "nearby",
-  title: "Kerzers", subtitle: "Via Neuchâtel · 18 km from Bern station",
+  title: "Get off at Kerzers", subtitle: "18 km from Bern station",
   legs: [
     leg("train", "IC 5", S.lausanne, S.neuchatel, "17:15", "17:55"),
     leg("train", "S 5", S.neuchatel, S.kerzers, "18:00", "18:12"),
   ],
   distance_to_destination_km: 18,
-  certainty: "safe", certainty_reason: "Does not use the blocked line",
+  certainty: "safe", certainty_reason: "Avoids the closed line",
   ticket_valid: false, ticket_hint: "Last leg to Bern not included", accessible: true,
 });
 
 const waitDirect = alt({
   id: "wait", category: "wait",
-  title: "Wait for the direct IC 1", subtitle: "Same route, if the line reopens · 0 transfers",
+  title: "Wait for your direct train", subtitle: "Only works if the line reopens in time",
   legs: [
     leg("wait", null, S.lausanne, S.lausanne, "16:52", "18:20"),
     leg("train", "IC 1", S.lausanne, S.bern, "18:20", "19:26"),
   ],
   arrival_latest: t("20:26"),
-  certainty: "uncertain", certainty_reason: "40% chance the line reopens before 18:00",
+  certainty: "uncertain", certainty_reason: "Depends on when the line reopens",
   ticket_valid: true, ticket_hint: "Your original ticket", accessible: true, uses_blocked_line: true,
   warnings: ["Seats likely"],
 });
@@ -204,7 +204,7 @@ const waitV3 = shifted(waitDirect, 30, "v3", {
     leg("train", "IC 1", S.lausanne, S.bern, "18:50", "19:56"),
   ],
   departure: t("17:46"), arrival: t("19:56"), arrival_latest: t("20:26"),
-  certainty_reason: "55% chance the line reopens before 18:45",
+  certainty_reason: "Depends on when the line reopens",
 });
 const altsV3 = response({
   fastest: [shifted(viaNeuchatel, 60, "v3"), shifted(replacementBus, 60, "v3"), shifted(viaPayerne, 60, "v3")],
@@ -216,9 +216,9 @@ const altsV3 = response({
 // --- Alternatives, version 4 (clock 18:15, service resumed) ---
 const directNow = alt({
   id: "direct", category: "fastest",
-  title: "Your IC 1, running again", subtitle: "Direct · 0 transfers · about +5 min",
+  title: "Take your direct IC 1", subtitle: "Running again, about 5 min late",
   legs: [leg("train", "IC 1", S.lausanne, S.bern, "18:25", "19:31")],
-  certainty: "safe", certainty_reason: "Line reopened at 18:15",
+  certainty: "safe", certainty_reason: "The line is open again",
   ticket_valid: true, ticket_hint: "Your original ticket", accessible: true,
   warnings: ["About +5 min"],
 });
@@ -226,7 +226,7 @@ const altsV4 = response({
   fastest: [directNow, shifted(viaNeuchatel, 90, "v4")],
   nearby: [shifted(toBrunnen, 90, "v4"), shifted(toBumpliz, 90, "v4")],
   comfort: [as(directNow, "comfort")],
-  wait: [as(directNow, "wait", { title: "No need to wait any more" })],
+  wait: [as(directNow, "wait")],
 });
 
 // --- Internal details (KULT ticker) ---
@@ -387,78 +387,78 @@ export interface CommuterAlert {
 }
 
 const viaPayerneMorning = (dep: string, arr: string, recommended = true): CommuterOption => ({
-  title: "Leave via Yverdon and Payerne",
-  detail: "IC 5 → S 30 → RE · 2 transfers",
+  title: "Leave at 07:20 via Yverdon and Payerne",
+  detail: "2 changes, avoids the closed line",
   departure: c(dep), arrival: c(arr),
-  certainty: "safe", reason: "Does not use the blocked line", recommended,
+  certainty: "safe", reason: "Avoids the closed line", recommended,
 });
 
 export const COMMUTER_ALERTS: CommuterAlert[] = [
   {
     clock: c("07:04"),
-    headline: "An earlier train on your line is stuck",
+    headline: "Your train may be affected",
     notification: {
       id: "n1", kind: "earlier_train", probability: 0.65, trip_id: "trip-1", incident_id: null,
       created_at: c("07:04"),
-      title: "Your 07:32 to Fribourg may be hit",
-      body: "The 07:02 IR 15 is stopped near Puidoux (technical fault). 65% chance the line is still blocked at 07:32.",
+      title: "Your 07:32 to Fribourg may be affected",
+      body: "A train ahead of yours is stuck near Puidoux. To be safe, leave at 07:20 via Yverdon and Payerne.",
     },
     reasons: [
       "The 07:02 IR 15 has been stopped near Puidoux since 06:58 (technical fault on the track).",
-      "In 94 similar technical faults, the line was still closed 30 min later in 65% of cases.",
+      "In similar technical faults, the line was still closed 30 minutes later about 6 times out of 10.",
       "SBB has not announced an end time yet.",
     ],
     line: [
       { time: c("07:02"), train: "IR 15", state: "stuck", note: "Near Puidoux since 06:58" },
       { time: c("07:17"), train: "S 4", state: "at_risk", note: "Waiting in Lausanne" },
-      { time: c("07:32"), train: "IR 15", state: "at_risk", note: "65% chance still disrupted", yours: true },
+      { time: c("07:32"), train: "IR 15", state: "at_risk", note: "Probably affected", yours: true },
     ],
     options: [
       viaPayerneMorning("07:20", "08:41"),
       {
-        title: "Keep your 07:32", detail: "Direct IR 15 · 0 transfers",
+        title: "Wait for your 07:32", detail: "Only if the line reopens in time",
         departure: c("07:32"), arrival: c("08:19"),
-        certainty: "uncertain", reason: "35% chance it runs normally",
+        certainty: "uncertain", reason: "Depends on when the line reopens",
       },
     ],
   },
   {
     clock: c("07:16"),
-    headline: "Your train will very likely not run",
+    headline: "Your train will probably not run",
     notification: {
       id: "n2", kind: "own_train", probability: 0.85, trip_id: "trip-1", incident_id: null,
       created_at: c("07:16"),
-      title: "Leave now: your 07:32 is likely cancelled",
-      body: "SBB: line closed until ~08:00. Take the 07:20 via Yverdon and Payerne, arrival 08:41.",
+      title: "Your 07:32 will probably not run",
+      body: "The line is closed until about 08:00. Take the 07:20 via Yverdon and Payerne, arriving 08:41.",
     },
     reasons: [
       "SBB now announces the line Puidoux – Palézieux closed until about 08:00.",
       "The 07:17 S 4 has been cancelled.",
-      "When SBB says “around 08:00” for this kind of fault, the line reopened after 08:00 in 70% of cases.",
+      "When SBB says “around 08:00” for this kind of fault, the line usually reopens later (7 times out of 10).",
     ],
     line: [
       { time: c("07:02"), train: "IR 15", state: "stuck", note: "Still near Puidoux" },
       { time: c("07:17"), train: "S 4", state: "cancelled", note: "" },
-      { time: c("07:32"), train: "IR 15", state: "at_risk", note: "85% cancelled or very late", yours: true },
-      { time: c("08:02"), train: "IR 15", state: "at_risk", note: "60% chance it runs" },
+      { time: c("07:32"), train: "IR 15", state: "at_risk", note: "Probably cancelled or very late", yours: true },
+      { time: c("08:02"), train: "IR 15", state: "at_risk", note: "May run if the line reopens" },
     ],
     options: [
       viaPayerneMorning("07:20", "08:41"),
       {
-        title: "Take the 08:02 instead", detail: "Direct IR 15 · 0 transfers",
+        title: "Take the 08:02 instead", detail: "Only if the line reopens by then",
         departure: c("08:02"), arrival: c("08:49"),
-        certainty: "uncertain", reason: "60% chance the line has reopened by then",
+        certainty: "uncertain", reason: "Depends on when the line reopens",
       },
     ],
   },
   {
     clock: c("08:05"),
-    headline: "The line has reopened",
+    headline: "Trains are running again",
     notification: {
       id: "n3", kind: "resolved", probability: null, trip_id: "trip-1", incident_id: null,
       created_at: c("08:05"),
       title: "Line reopened: Lausanne – Fribourg",
-      body: "Trains run again, with some delays until about 09:00. Tomorrow's 07:32 is not affected.",
+      body: "Trains are running again, a few minutes late. Tomorrow's 07:32 is not affected.",
     },
     reasons: [
       "Service resumed at 07:58.",

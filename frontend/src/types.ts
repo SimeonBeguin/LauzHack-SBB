@@ -103,6 +103,8 @@ export interface Alternative {
   accessible?: boolean;                // (UI) step-free
   uses_blocked_line?: boolean;         // (UI)
   warnings?: string[];                 // (UI) e.g. "Bus: +5 to +15 min (traffic)"
+  /** (UI) chance to arrive by preferences.deadline; null when no deadline */
+  on_time_probability?: number | null;
 }
 
 export interface AlternativesResponse {

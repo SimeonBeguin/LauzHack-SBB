@@ -1,7 +1,9 @@
-// Small shared UI pieces: icons, header, chips, certainty badge, leg bar, sheet.
+// Shared UI pieces, styled after the SBB Mobile app: white top bar, line
+// pictograms, connection line with change dots, red primary buttons.
 import type { ReactNode } from "react";
-import type { Certainty, Leg } from "../types";
-import { minutesBetween } from "../lib/format";
+import type { Alternative, Certainty, Leg } from "../types";
+import { durationLabel, hhmm, minutesBetween } from "../lib/format";
+import { chanceLabel, RELIABILITY, type ChanceLabel } from "../lib/chance";
 
 // ---------------------------------------------------------------------------
 // Icons (inline SVG, inherit currentColor)
@@ -9,23 +11,24 @@ import { minutesBetween } from "../lib/format";
 const paths: Record<string, ReactNode> = {
   back: <path d="M15 5l-7 7 7 7" />,
   chevron: <path d="M9 5l7 7-7 7" />,
-  alert: <><circle cx="12" cy="12" r="10" fill="currentColor" stroke="none" /><path d="M12 7v6M12 16.5v.5" stroke="#fff" strokeWidth="2.4" /></>,
+  down: <path d="M5 9l7 7 7-7" />,
+  close: <path d="M6 6l12 12M18 6L6 18" />,
+  alert: <><path d="M12 3l10 18H2z" fill="currentColor" stroke="none" /><path d="M12 10v5M12 17.6v.4" stroke="#fff" strokeWidth="2.2" /></>,
   check: <><circle cx="12" cy="12" r="10" fill="currentColor" stroke="none" /><path d="M7.5 12.5l3 3 6-6.5" stroke="#fff" strokeWidth="2.2" /></>,
   info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8v.5" /></>,
-  bolt: <path d="M13 3L5 14h6l-1 7 8-11h-6z" />,
-  target: <><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /></>,
-  cup: <><path d="M5 9h11v5a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5z" /><path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16M8 3v3M11 3v3" /></>,
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
   bell: <><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20a2 2 0 0 0 4 0" /></>,
   sliders: <><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></>,
-  train: <><rect x="6" y="3" width="12" height="14" rx="3" /><path d="M6 11h12M9 21l1.5-4M15 21l-1.5-4" /></>,
   plus: <path d="M12 5v14M5 12h14" />,
-  star: <path d="M12 4l2.4 5 5.4.6-4 3.7 1.1 5.4L12 16l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z" />,
   lock: <><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></>,
   ticket: <path d="M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4z" />,
+  timetable: <><circle cx="11" cy="11" r="6" /><path d="M20 20l-4.5-4.5" /></>,
+  trips: <><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M4 10h16M9 3v4M15 3v4" /></>,
+  user: <><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>,
+  arrow: <path d="M5 12h14M13 6l6 6-6 6" />,
 };
 
-export function Icon({ name, size = 20, className }: { name: keyof typeof paths | string; size?: number; className?: string }) {
+export function Icon({ name, size = 20, className }: { name: string; size?: number; className?: string }) {
   return (
     <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -35,14 +38,12 @@ export function Icon({ name, size = 20, className }: { name: keyof typeof paths 
 }
 
 // ---------------------------------------------------------------------------
-// Header
+// Top bar
 // ---------------------------------------------------------------------------
 export function Header({ title, subtitle, onBack, right }: { title: string; subtitle?: string; onBack?: () => void; right?: ReactNode }) {
   return (
     <header className="app-header">
-      {onBack && (
-        <button className="icon-btn" onClick={onBack} aria-label="Back"><Icon name="back" size={24} /></button>
-      )}
+      {onBack && <button className="icon-btn" onClick={onBack} aria-label="Back"><Icon name="back" size={24} /></button>}
       <div className="app-header-text">
         <h1>{title}</h1>
         {subtitle && <p>{subtitle}</p>}
@@ -53,61 +54,101 @@ export function Header({ title, subtitle, onBack, right }: { title: string; subt
 }
 
 // ---------------------------------------------------------------------------
-// Chips and badges
+// Line pictogram ("IC 5", "S 30", "EV" for replacement bus)
 // ---------------------------------------------------------------------------
-export function Chip({ children, active, onClick, tone }: { children: ReactNode; active?: boolean; onClick?: () => void; tone?: "warn" | "ok" | "muted" }) {
-  const cls = `chip ${active ? "chip-active" : ""} ${tone ? `chip-${tone}` : ""} ${onClick ? "chip-btn" : ""}`;
-  return onClick
-    ? <button type="button" className={cls} onClick={onClick} aria-pressed={active}>{children}</button>
-    : <span className={cls}>{children}</span>;
+export function LineBadge({ line, mode }: { line: string | null; mode?: string }) {
+  if (mode === "walk" || mode === "wait") return null;
+  const label = mode === "replacement_bus" ? "EV" : line ?? "Bus";
+  const kind = mode === "replacement_bus" ? "ev"
+    : /^(IC|IR|EC|ICE|TGV)/.test(label) ? "long"
+    : /^(RE|R)\b/.test(label) ? "regio"
+    : /^S/.test(label) ? "s"
+    : "bus";
+  return <span className={`line-badge lb-${kind}`}>{label}</span>;
 }
 
-export const CERTAINTY_LABEL: Record<Certainty, string> = { safe: "Safe", likely: "Likely", uncertain: "Uncertain" };
-
-export function CertaintyBadge({ certainty, reason, compact }: { certainty?: Certainty; reason?: string; compact?: boolean }) {
-  if (!certainty) return null;
+export function LineBadges({ legs }: { legs: Leg[] }) {
   return (
-    <span className={`certainty certainty-${certainty}`} title={reason}>
-      <span className="dot" aria-hidden="true" />
-      {CERTAINTY_LABEL[certainty]}{!compact && reason ? ` · ${reason}` : ""}
+    <span className="line-badges">
+      {legs.filter((l) => l.mode !== "wait" && l.mode !== "walk").map((l, i) => <LineBadge key={i} line={l.line} mode={l.mode} />)}
     </span>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Leg bar: one segment per leg, width proportional to duration, gap = transfer
+// Connection line: 17:15 ●──●──● 18:40
 // ---------------------------------------------------------------------------
-export function LegBar({ legs }: { legs: Leg[] }) {
-  if (!legs.length) return null;
-  const start = legs[0].departure;
-  const end = legs[legs.length - 1].arrival;
-  const total = Math.max(1, minutesBetween(start, end));
-  const parts: { kind: string; min: number; label: string }[] = [];
-  legs.forEach((l, i) => {
-    if (i > 0) {
-      const gap = minutesBetween(legs[i - 1].arrival, l.departure);
-      if (gap > 0) parts.push({ kind: "transfer", min: gap, label: `Transfer ${gap} min` });
-    }
-    parts.push({ kind: l.mode, min: Math.max(1, minutesBetween(l.departure, l.arrival)), label: `${l.line ?? l.mode} ${l.from_stop.name} → ${l.to_stop.name}` });
-  });
+export function ConnectionLine({ alt }: { alt: Alternative }) {
+  const moving = alt.legs.filter((l) => l.mode !== "wait");
+  const first = moving[0] ?? alt.legs[0];
+  const last = alt.legs[alt.legs.length - 1];
+  const total = Math.max(1, minutesBetween(first.departure, last.arrival));
   return (
-    <div className="legbar" role="img" aria-label={parts.map((p) => p.label).join(", ")}>
-      {parts.map((p, i) => (
-        <span key={i} className={`seg seg-${p.kind}`} style={{ flexGrow: Math.max(p.min / total, 0.04) }} title={p.label} />
-      ))}
+    <div className="conn">
+      <div className="conn-times">
+        <strong>{hhmm(first.departure)}</strong>
+        <span className="muted small">{durationLabel(total)}</span>
+        <strong className={alt.arrival_latest ? "late" : ""}>{alt.arrival_latest ? `${hhmm(alt.arrival)}+` : hhmm(alt.arrival)}</strong>
+      </div>
+      <div className="conn-line" aria-hidden="true">
+        {moving.map((l, i) => (
+          <span key={i} className={`conn-seg conn-${l.mode}`}
+            style={{ flexGrow: Math.max(0.08, minutesBetween(l.departure, l.arrival) / total) }} />
+        ))}
+      </div>
+      <div className="conn-stops muted small">
+        <span>{first.from_stop.name}</span>
+        <span>{alt.transfers === 0 ? "Direct" : `${alt.transfers} change${alt.transfers > 1 ? "s" : ""}`}</span>
+        <span>{alt.final_stop.name}</span>
+      </div>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Bottom sheet (positioned inside the phone)
+// Chance badge: one word + colour + "x in 10"
 // ---------------------------------------------------------------------------
-export function BottomSheet({ open, onClose, children }: { open: boolean; onClose: () => void; children: ReactNode }) {
+export function labelFor(alt: Pick<Alternative, "on_time_probability" | "certainty">): ChanceLabel | null {
+  if (alt.on_time_probability != null) return chanceLabel(alt.on_time_probability);
+  return alt.certainty ? RELIABILITY[alt.certainty] : null;
+}
+
+export function ChanceBadge({ label, suffix, big }: { label: ChanceLabel | null; suffix?: string; big?: boolean }) {
+  if (!label) return null;
+  return (
+    <span className={`chance chance-${label.tone} ${big ? "chance-big" : ""}`}>
+      <span className="chance-dot" aria-hidden="true" />
+      <span>
+        <strong>{label.word}{suffix ? ` ${suffix}` : ""}</strong>
+        {label.freq && <span className="chance-freq"> · {label.freq}</span>}
+      </span>
+    </span>
+  );
+}
+
+export function CertaintyBadge({ certainty }: { certainty?: Certainty }) {
+  return certainty ? <ChanceBadge label={RELIABILITY[certainty]} /> : null;
+}
+
+// ---------------------------------------------------------------------------
+// Chips, sheet, misc
+// ---------------------------------------------------------------------------
+export function Chip({ children, active, onClick }: { children: ReactNode; active?: boolean; onClick?: () => void }) {
+  const cls = `chip ${active ? "chip-active" : ""} ${onClick ? "chip-btn" : ""}`;
+  return onClick
+    ? <button type="button" className={cls} onClick={onClick} aria-pressed={active}>{children}</button>
+    : <span className={cls}>{children}</span>;
+}
+
+export function BottomSheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
   return (
     <div className={`sheet-layer ${open ? "open" : ""}`} aria-hidden={!open}>
       <div className="sheet-backdrop" onClick={onClose} />
-      <div className="sheet" role="dialog" aria-modal="true">
-        <div className="sheet-handle" />
+      <div className="sheet" role="dialog" aria-modal="true" aria-label={title}>
+        <div className="sheet-head">
+          <h2>{title}</h2>
+          <button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="close" size={22} /></button>
+        </div>
         {children}
       </div>
     </div>
@@ -116,4 +157,14 @@ export function BottomSheet({ open, onClose, children }: { open: boolean; onClos
 
 export function SectionTitle({ children }: { children: ReactNode }) {
   return <h2 className="section-title">{children}</h2>;
+}
+
+export function RowLink({ icon, children, onClick }: { icon: string; children: ReactNode; onClick: () => void }) {
+  return (
+    <button className="row-link" onClick={onClick}>
+      <Icon name={icon} size={20} />
+      <span>{children}</span>
+      <Icon name="chevron" size={18} />
+    </button>
+  );
 }

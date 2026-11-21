@@ -1,0 +1,70 @@
+// Turn probabilities into words a tired traveller understands at a glance.
+// We never show a bare percentage on the main screens: a word, a colour and
+// "x in 10" (natural frequencies are easier to read than percentages).
+import type { Alternative, Certainty, ProbabilityPoint } from "../types";
+import { minutesBetween } from "./format";
+
+export type Tone = "good" | "ok" | "bad";
+
+export interface ChanceLabel { word: string; tone: Tone; freq: string }
+
+export function inTen(p: number): string {
+  if (p < 0.05) return "less than 1 in 10";
+  if (p > 0.95) return "more than 9 in 10";
+  return `${Math.min(9, Math.max(1, Math.round(p * 10)))} in 10`;
+}
+
+export function chanceLabel(p: number): ChanceLabel {
+  const freq = inTen(p);
+  if (p >= 0.9) return { word: "Almost certain", tone: "good", freq };
+  if (p >= 0.7) return { word: "Very likely", tone: "good", freq };
+  if (p >= 0.5) return { word: "Likely", tone: "ok", freq };
+  if (p >= 0.3) return { word: "Uncertain", tone: "ok", freq };
+  if (p >= 0.1) return { word: "Unlikely", tone: "bad", freq };
+  return { word: "Very unlikely", tone: "bad", freq };
+}
+
+/** Without a deadline: how reliable the option is. */
+export const RELIABILITY: Record<Certainty, ChanceLabel> = {
+  safe: { word: "Reliable", tone: "good", freq: "" },
+  likely: { word: "Probably fine", tone: "ok", freq: "" },
+  uncertain: { word: "Uncertain", tone: "bad", freq: "" },
+};
+
+const BASE: Record<Certainty, number> = { safe: 0.95, likely: 0.85, uncertain: 0.6 };
+
+/** Chance the line has reopened before `t`, interpolated on the estimate curve. */
+export function reopenedBefore(points: ProbabilityPoint[], now: string, t: string): number {
+  const pts = [{ before: now, p: 0 }, ...points];
+  const at = new Date(t).getTime();
+  if (at <= new Date(now).getTime()) return 0;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    const ta = new Date(a.before).getTime(), tb = new Date(b.before).getTime();
+    if (at <= tb) return a.p + ((at - ta) / (tb - ta)) * (b.p - a.p);
+  }
+  return pts[pts.length - 1].p;
+}
+
+/**
+ * Chance this option gets the traveller there by `deadline`.
+ * - Routes that use the blocked line depend on when it reopens.
+ * - Other routes depend on their own reliability, and must arrive in time.
+ * MOCK logic: the backend (workstream A + B) should return `on_time_probability`.
+ */
+export function onTimeChance(a: Alternative, deadline: string, curve: ProbabilityPoint[], now: string): number {
+  const base = BASE[a.certainty ?? "uncertain"];
+  if (a.uses_blocked_line) {
+    const ride = a.legs.find((l) => l.mode !== "wait");
+    const rideMin = ride ? minutesBetween(ride.departure, ride.arrival) : 60;
+    // Need the line open ~10 min before the last train that still arrives in time.
+    const latestReopen = new Date(new Date(deadline).getTime() - (rideMin + 10) * 60_000).toISOString();
+    return Math.min(base + 0.3, reopenedBefore(curve, now, latestReopen));
+  }
+  const slack = minutesBetween(a.arrival, deadline);
+  if (slack < 0) return 0.02;
+  const roadDelay = Math.max(0, ...a.legs.map((l) => l.road_delay_minutes ?? 0));
+  if (roadDelay && slack < roadDelay) return base * 0.5;
+  if (slack < 5) return base - 0.15;
+  return base;
+}

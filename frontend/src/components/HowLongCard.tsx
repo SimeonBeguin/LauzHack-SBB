@@ -1,8 +1,9 @@
-// The official SBB reopening time is the headline. Our statistics only add a
-// margin around it ("plan until ...") and never replace it.
+// Detailed reopening estimate. The official SBB time stays the headline; our
+// statistics only add a margin and never replace it.
 import { useState } from "react";
 import type { DisruptionStatus, ProbabilityPoint, ReopeningEstimate } from "../types";
 import { hhmm, pct } from "../lib/format";
+import { inTen } from "../lib/chance";
 import { Icon } from "./ui";
 
 const RELIABILITY: Record<string, string> = { good: "good", fair: "fair", low: "low" };
@@ -72,58 +73,43 @@ function ProbabilityChart({ estimate, now }: { estimate: ReopeningEstimate; now:
       <div className="chart-caption">
         {hover != null
           ? <>{pct(pts[hover].p)} chance the line has reopened before {hhmm(pts[hover].before)}</>
-          : <>Chance the line has reopened, by time of day</>}
+          : <>Chance the line is open again, by time of day</>}
       </div>
     </div>
   );
 }
 
-export default function EstimateCard({ status, now }: { status: DisruptionStatus; now: string }) {
+/** Shown on the "Why and how long?" page only, for people who want to know more. */
+export default function HowLongCard({ status, now }: { status: DisruptionStatus; now: string }) {
   const e = status.estimate;
-
   if (status.kind === "resolved") {
     return (
-      <section className="card estimate resolved">
-        <div className="estimate-head">
-          <Icon name="check" size={28} className="ok-icon" />
-          <div>
-            <div className="estimate-official">Line reopened at {hhmm(e.official_end)}</div>
-            <div className="muted">{e.explanation}</div>
-          </div>
-        </div>
+      <section className="card estimate">
+        <h3>How long did it last?</h3>
+        <p>The line reopened at <strong>{hhmm(e.official_end)}</strong>.</p>
       </section>
     );
   }
-
   const pts = e.probabilities ?? [];
   const atOfficial = pointAt(pts, e.official_end);
   const atMargin = pointAt(pts, e.margin_until);
 
   return (
     <section className="card estimate">
-      <div className="estimate-row">
-        <span className="muted">Line reopening</span>
-        <span className="muted">Updated at {hhmm(status.last_update)}</span>
-      </div>
-      <div className="estimate-official">
-        SBB announces <strong>{e.official_label ?? ""} {hhmm(e.official_end)}</strong>
-      </div>
-      {e.margin_until && (
-        <div className="estimate-margin">Plan a margin until <strong>{hhmm(e.margin_until)}</strong></div>
-      )}
-
-      <ProbabilityChart estimate={e} now={now} />
-
-      {(atOfficial || atMargin) && (
-        <p className="estimate-text">
-          {atOfficial && <><strong>{pct(atOfficial.p)}</strong> chance the line reopens before {hhmm(atOfficial.before)}</>}
-          {atOfficial && atMargin && ", "}
-          {atMargin && <><strong>{pct(atMargin.p)}</strong> before {hhmm(atMargin.before)}.</>}
+      <h3>How long will it last?</h3>
+      <p>SBB expects trains again <strong>{e.official_label} {hhmm(e.official_end)}</strong>.</p>
+      {atOfficial && atMargin && (
+        <p>
+          We looked at {e.similar_incidents_count} similar incidents. The line was open again
+          by {hhmm(atOfficial.before)} in <strong>{inTen(atOfficial.p)}</strong> cases,
+          and by {hhmm(atMargin.before)} in <strong>{inTen(atMargin.p)}</strong> cases.
         </p>
       )}
+      {e.margin_until && <p className="estimate-margin">To be safe, count on {hhmm(e.margin_until)}.</p>}
+      <ProbabilityChart estimate={e} now={now} />
       <p className="fineprint">
-        <Icon name="info" size={14} /> Estimate, not a guarantee. {e.explanation}.
-        {e.reliability && <> Reliability: {RELIABILITY[e.reliability]}.</>}
+        <Icon name="info" size={14} /> This is an estimate, not a promise. SBB's time stays the official one.
+        {e.reliability && <> Reliability of the estimate: {RELIABILITY[e.reliability]}.</>}
       </p>
     </section>
   );

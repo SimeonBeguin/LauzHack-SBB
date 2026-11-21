@@ -137,6 +137,7 @@ class Alternative(BaseModel):
     accessible: bool | None = None
     uses_blocked_line: bool = False
     warnings: list[str] = []
+    on_time_probability: float | None = Field(None, ge=0, le=1)  # chance to arrive by preferences.deadline
 
 
 class AlternativesRequest(BaseModel):

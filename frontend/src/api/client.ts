@@ -44,7 +44,10 @@ export function getAlternatives(journeyId: string, preferences: Preferences, ste
       method: "POST",
       body: JSON.stringify({ journey_id: journeyId, preferences, replay_step: step }),
     }),
-    () => applyPreferences(stepOf(step).alternatives, preferences),
+    () => {
+      const st = stepOf(step);
+      return applyPreferences(st.alternatives, preferences, st.status.estimate.probabilities ?? [], st.clock);
+    },
   );
 }
 

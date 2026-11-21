@@ -1,28 +1,12 @@
-// Opened from a commuter notification: how likely my own train is hit, why,
-// what is happening on my line, and what I can do.
+// Opened from a commuter notification. One statement, one recommended action,
+// one alternative. The "why" (reasons, trains on the line) is folded away.
 import { useStore } from "../store";
 import { COMMUTER_ALERTS, COMMUTER_TRIP } from "../mocks/scenario";
-import { hhmm, pct } from "../lib/format";
-import { CertaintyBadge, Header, Icon, SectionTitle } from "../components/ui";
+import { hhmm } from "../lib/format";
+import { chanceLabel } from "../lib/chance";
+import { CertaintyBadge, ChanceBadge, Header, Icon } from "../components/ui";
 
-const KIND_LABEL = {
-  earlier_train: "Early warning · an earlier train is hit",
-  own_train: "Your train is affected",
-  resolved: "All clear",
-};
-
-const STATE_LABEL = { stuck: "Stopped", cancelled: "Cancelled", at_risk: "At risk", ok: "Running" };
-
-function RiskGauge({ p }: { p: number }) {
-  const r = 34, c = 2 * Math.PI * r;
-  return (
-    <svg width="88" height="88" viewBox="0 0 88 88" role="img" aria-label={`${pct(p)} chance`}>
-      <circle cx="44" cy="44" r={r} className="gauge-track" />
-      <circle cx="44" cy="44" r={r} className="gauge-value" strokeDasharray={`${c * p} ${c}`} transform="rotate(-90 44 44)" />
-      <text x="44" y="50" textAnchor="middle" className="gauge-text">{pct(p)}</text>
-    </svg>
-  );
-}
+const STATE_LABEL = { stuck: "Stopped", cancelled: "Cancelled", at_risk: "May be affected", ok: "Running" };
 
 export default function CommuterAlert({ index }: { index: number }) {
   const { back } = useStore();
@@ -30,60 +14,74 @@ export default function CommuterAlert({ index }: { index: number }) {
   const n = a.notification;
   const trip = COMMUTER_TRIP;
   const resolved = n.kind === "resolved";
+  const [advice, ...others] = a.options;
 
   return (
     <>
       <Header
         title={`Your ${trip.departure_time} to ${trip.destination_name?.split("/")[0]}`}
-        subtitle={`${trip.line} · ${trip.origin_name} → ${trip.destination_name} · alert at ${hhmm(n.created_at)}`}
+        subtitle={`${trip.line}, ${trip.origin_name} → ${trip.destination_name}`}
         onBack={back}
       />
       <div className="content">
-        <section className={`card risk ${resolved ? "resolved" : ""}`}>
-          <div className={`eyebrow ${resolved ? "green" : "red"}`}>{n.kind ? KIND_LABEL[n.kind] : ""}</div>
-          <div className="risk-main">
-            {n.probability != null ? <RiskGauge p={n.probability} /> : <Icon name="check" size={56} className="ok-icon" />}
-            <div>
-              <strong className="risk-headline">{a.headline}</strong>
-              {n.probability != null && (
-                <div className="muted small">{pct(n.probability)} chance your {trip.departure_time} is still disrupted when it should leave.</div>
-              )}
-            </div>
+        <section className={`status-box ${resolved ? "ok" : ""}`}>
+          <Icon name={resolved ? "check" : "alert"} size={22} />
+          <div>
+            <strong>{a.headline}</strong>
+            <p>{n.body}</p>
+            {n.probability != null && (
+              <div className="status-chance">
+                <span className="muted small">Chance your {trip.departure_time} runs normally</span>
+                <ChanceBadge label={chanceLabel(1 - n.probability)} />
+              </div>
+            )}
           </div>
-          <ul className="reasons">{a.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
         </section>
 
-        <SectionTitle>Trains on your line</SectionTitle>
-        <ol className="card line-timeline">
-          {a.line.map((tr) => (
-            <li key={tr.time + tr.train} className={`lt lt-${tr.state} ${tr.yours ? "yours" : ""}`}>
-              <span className="lt-time">{hhmm(tr.time)}</span>
-              <span className="lt-dot" aria-hidden="true" />
-              <span className="lt-body">
-                <strong>{tr.train}{tr.yours ? " · your train" : ""}</strong>
-                <span className="muted small">{STATE_LABEL[tr.state]}{tr.note ? ` · ${tr.note}` : ""}</span>
-              </span>
-            </li>
-          ))}
-        </ol>
-
-        {a.options.length > 0 && <SectionTitle>What you can do</SectionTitle>}
-        {a.options.map((o) => (
-          <article key={o.title} className={`card alt-card ${o.recommended ? "recommended" : ""}`}>
-            {o.recommended && <div className="eyebrow red"><Icon name="star" size={12} /> Our advice</div>}
-            <div className="alt-top">
-              <div>
-                <h3>{o.title}</h3>
-                <div className="muted small">Leave {hhmm(o.departure)} · {o.detail}</div>
-              </div>
-              <div className="alt-time">{hhmm(o.arrival)}</div>
+        {advice && (
+          <section className="card advice">
+            <div className="advice-eyebrow">Our advice</div>
+            <h2 className="advice-title">{advice.title}</h2>
+            <div className="advice-times">
+              <strong>{hhmm(advice.departure)}</strong>
+              <Icon name="arrow" size={18} className="muted" />
+              <strong>{hhmm(advice.arrival)}</strong>
+              <span className="muted small">{advice.detail}</span>
             </div>
-            <div className="chips"><CertaintyBadge certainty={o.certainty} reason={o.reason} /></div>
-          </article>
+            <CertaintyBadge certainty={advice.certainty} />
+            <button className="btn btn-primary">Show connection</button>
+          </section>
+        )}
+
+        {others.map((o) => (
+          <section key={o.title} className="card option-plain">
+            <div>
+              <strong>{o.title}</strong>
+              <div className="muted small">{hhmm(o.departure)} → {hhmm(o.arrival)} · {o.detail}</div>
+            </div>
+            <CertaintyBadge certainty={o.certainty} />
+          </section>
         ))}
 
-        {a.footer && <section className="card ok-note"><Icon name="check" size={18} className="ok-icon" /> {a.footer}</section>}
-        <p className="fineprint"><Icon name="info" size={14} /> Estimate, not a guarantee. The SBB timetable stays the official source.</p>
+        {a.footer && <section className="status-box ok"><Icon name="check" size={22} /><div><strong>{a.footer}</strong></div></section>}
+
+        <details className="card why">
+          <summary>Why are we telling you this? <Icon name="down" size={16} /></summary>
+          <ul className="reasons">{a.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+          <h3>Trains on your line</h3>
+          <ol className="line-timeline">
+            {a.line.map((tr) => (
+              <li key={tr.time + tr.train} className={`lt lt-${tr.state} ${tr.yours ? "yours" : ""}`}>
+                <span className="lt-time">{hhmm(tr.time)}</span>
+                <span className="lt-dot" aria-hidden="true" />
+                <span className="lt-body">
+                  <strong>{tr.train}{tr.yours ? " (your train)" : ""}</strong>
+                  <span className="muted small">{STATE_LABEL[tr.state]}{tr.note ? `, ${tr.note.charAt(0).toLowerCase()}${tr.note.slice(1)}` : ""}</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        </details>
       </div>
     </>
   );

@@ -13,6 +13,7 @@ import CommuterSetup from "./screens/CommuterSetup";
 import LockScreen, { NotificationCard } from "./screens/LockScreen";
 import CommuterAlert from "./screens/CommuterAlert";
 import DemoPanel from "./demo/DemoPanel";
+import { Icon } from "./components/ui";
 
 function Screen() {
   const { route } = useStore();
@@ -27,15 +28,40 @@ function Screen() {
   }
 }
 
-function StatusBar() {
+function StatusBar({ dark }: { dark: boolean }) {
   const { clock } = useStore();
   return (
-    <div className="statusbar">
+    <div className={`statusbar ${dark ? "on-dark" : ""}`}>
       <span>{hhmm(clock)}</span>
       <span className="statusbar-right" aria-hidden="true">
         <span className="signal"><i /><i /><i /><i /></span> 5G <span className="battery"><i /></span>
       </span>
     </div>
+  );
+}
+
+// Bottom navigation like the SBB app. Only "My trips" is part of the prototype.
+function TabBar() {
+  const { reset, showToast, route } = useStore();
+  const tabs = [
+    { id: "timetable", label: "Timetable", icon: "timetable" },
+    { id: "tickets", label: "Tickets", icon: "ticket" },
+    { id: "trips", label: "My trips", icon: "trips" },
+    { id: "profile", label: "Profile", icon: "user" },
+  ];
+  return (
+    <nav className="tabbar">
+      {tabs.map((t) => {
+        const active = t.id === "trips";
+        return (
+          <button key={t.id} className={active ? "active" : ""} aria-current={active ? "page" : undefined}
+            onClick={() => (active ? route.name !== "home" && reset({ name: "home" }) : showToast("Not part of this prototype"))}>
+            <Icon name={t.icon} size={22} />
+            <span>{t.label}</span>
+          </button>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -46,10 +72,11 @@ function Phone() {
   return (
     <div className="phone">
       <div className={`phone-screen ${isLock ? "is-lock" : ""}`}>
-        <StatusBar />
+        <StatusBar dark={isLock} />
         <div className="screen-scroll" key={JSON.stringify(route)} aria-hidden={sheetOpen || undefined}>
           <Screen />
         </div>
+        {!isLock && <TabBar />}
         <PersonaliseSheet />
         {banner != null && (
           <div className="banner-layer">
