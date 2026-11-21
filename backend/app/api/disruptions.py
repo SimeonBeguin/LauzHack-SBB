@@ -26,12 +26,13 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.estimation import estimator, kult, replay
 from app.mock_data import DEMO_INCIDENT_ID, get_journey
+from app.routing.disruption import DEMO_SCENARIOS
 from app.models import DepartureRisk, DisruptionStatus, IncidentDetails, IncidentTimeline
 
 router = APIRouter(tags=["disruptions"])
 
 # Which real incident each demo journey replays.
-JOURNEY_INCIDENTS = {"demo-1": DEMO_INCIDENT_ID}
+JOURNEY_INCIDENTS = {"demo-1": DEMO_INCIDENT_ID}  # demo-zh: fictitious incident, see DEMO_SCENARIOS
 
 
 def _incident_for(journey_id: str) -> str:
@@ -72,13 +73,84 @@ def journey_status(
     live: bool = Query(True, description="Shift all times so that the replayed moment is now"),
 ) -> DisruptionStatus:
     journey = get_journey(journey_id)
+    scenario = DEMO_SCENARIOS.get(journey.id)
+    if scenario:
+        return _scenario_status(journey, scenario, at, minutes_since_start)
     incident_id = _incident_for(journey.id)
     try:
         t = replay.resolve_time(incident_id, at, minutes_since_start)
         status = replay.status_at(incident_id, journey.id, t)
+        start = estimator._history_indexed().loc[incident_id, "start"]
     except (FileNotFoundError, KeyError):
-        return _mock_status(journey.id)
+        return _mock_status(journey.id).model_copy(update={"journey": journey})
+    try:
+        duration_type = replay._version_at(incident_id, t)["duration_type"]
+    except (KeyError, IndexError):
+        duration_type = None
+    status = status.model_copy(update={
+        "estimate": _with_ui_labels(status.estimate, duration_type),
+        "journey": journey,
+        "started_at": start.to_pydatetime(),
+        "kind": "resolved" if status.estimate.ended else _kind_of(status.title),
+    })
     return replay.shift_to_now(status, t) if live else status
+
+
+# How SBB phrases the announced end (liveticker duration_type), for the UI sentence
+# "SBB expects trains again <label> 18:00".
+_OFFICIAL_LABELS = {
+    "UNTIL": "until", "UNTIL_AT_LEAST": "at least until", "UNTIL_APPROX_DATE_TIME": "around",
+    "UNTIL_DATE": "until", "UNTIL_AT_LEAST_DATE_TIME": "at least until", "FROM_TO": "until",
+}
+
+
+def _with_ui_labels(e, duration_type: str | None):
+    """Fill the optional UI fields of the estimate from what we already know."""
+    label = "reopened at" if e.ended else _OFFICIAL_LABELS.get(str(duration_type), "around")
+    return e.model_copy(update={
+        "official_label": e.official_label or label,
+        "margin_until": e.margin_until or (None if e.ended else e.likely_end_latest),
+    })
+
+
+def _kind_of(title: str) -> str:
+    return "restriction" if title.lower().startswith(("restriction", "einschränkung")) else "interruption"
+
+
+def _scenario_status(journey, scenario, at: datetime | None, minutes_since_start: float | None) -> DisruptionStatus:
+    """Status of the fictitious demo incident (Zürich HB -> Hinwil, Uster - Wetzikon ZH),
+    with the same estimate as the routing (app/routing/disruption.py)."""
+    from datetime import timedelta
+
+    from app.routing.service_points import get_stop
+
+    start = scenario.start(journey)
+    if at is None:
+        at = start + timedelta(minutes=minutes_since_start) if minutes_since_start is not None else scenario.now(journey)
+    names = []
+    for stop_id in (scenario.section_from, scenario.section_to):
+        try:
+            stop = get_stop(stop_id)
+        except Exception:  # service points not downloadable
+            stop = None
+        names.append(stop.name if stop else stop_id)
+    section = f"{names[0]} - {names[1]}"
+    try:
+        reason = replay._reason_labels().get(scenario.reason_id, scenario.reason_id)
+    except FileNotFoundError:
+        reason = scenario.reason_id
+    return DisruptionStatus(
+        incident_id=scenario.incident_id,
+        journey_id=journey.id,
+        title=f"Interruption {section}",
+        reason=reason,
+        affected_section=section,
+        estimate=_with_ui_labels(scenario.estimate(journey, at=at), "UNTIL_APPROX_DATE_TIME"),
+        last_update=min(at, start + timedelta(minutes=5)),
+        kind="interruption",
+        started_at=start,
+        journey=journey,
+    )
 
 
 @router.get("/journeys/{journey_id}/details", response_model=IncidentDetails)
@@ -87,7 +159,12 @@ def journey_details(
     at: datetime | None = None,
     minutes_since_start: float | None = Query(None, ge=0),
 ) -> IncidentDetails:
-    incident_id = _incident_for(get_journey(journey_id).id)
+    journey = get_journey(journey_id)
+    scenario = DEMO_SCENARIOS.get(journey.id)
+    if scenario:  # fictitious incident: there is no internal KULT case to show
+        return IncidentDetails(incident_id=scenario.incident_id,
+                               match_explanation="Fictitious demo incident: no internal SBB details.")
+    incident_id = _incident_for(journey.id)
     try:
         t = replay.resolve_time(incident_id, at, minutes_since_start)
     except (FileNotFoundError, KeyError):

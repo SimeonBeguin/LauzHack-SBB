@@ -1,8 +1,9 @@
 // App + demo state in one small context: navigation stack, preferences,
 // replay step of the incident, delivered commuter alerts, toasts and banners.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getAlternatives, getJourneyDetails, getJourneyStatus } from "./api/client";
-import { COMMUTER_ALERTS, COMMUTER_START_CLOCK, COMMUTER_TRIP, DELAY_JOURNEY, DELAY_STEPS } from "./mocks/scenario";
+import { getAlternatives, getJourneyDetails, getJourneyStatus, JOURNEY_ID, USE_MOCKS } from "./api/client";
+import { applyPreferences } from "./mocks/applyPreferences";
+import { COMMUTER_ALERTS, COMMUTER_START_CLOCK, COMMUTER_TRIP, DELAY_STEPS } from "./mocks/scenario";
 import { DEFAULT_PREFERENCES, type AlternativeCategory, type AlternativesResponse, type CommuterTrip, type DisruptionStatus, type IncidentDetails, type Preferences } from "./types";
 import { showOsNotification } from "./lib/osNotifications";
 
@@ -95,7 +96,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let alive = true;
-    getJourneyDetails(DELAY_JOURNEY.id, delayStep).then((d) => alive && setDetails(d)).catch(() => alive && setDetails(null));
+    getJourneyDetails(JOURNEY_ID, delayStep).then((d) => alive && setDetails(d)).catch(() => alive && setDetails(null));
     return () => { alive = false; };
   }, [delayStep]);
 
@@ -104,12 +105,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let alive = true;
     setLoading(true);
     Promise.all([
-      getJourneyStatus(DELAY_JOURNEY.id, delayStep),
-      getAlternatives(DELAY_JOURNEY.id, prefs, delayStep),
+      getJourneyStatus(JOURNEY_ID, delayStep),
+      getAlternatives(JOURNEY_ID, prefs, delayStep),
     ]).then(([s, a]) => {
       if (!alive) return;
       setStatus(s);
-      setAlternatives(a);
+      // The backend ranks the options; the chance to arrive by the deadline and the
+      // "disabled because of your answers" reasons are still computed here.
+      const now = s.estimate.as_of ?? s.last_update;
+      setAlternatives(USE_MOCKS ? a : applyPreferences(a, prefs, s.estimate.probabilities ?? [], now));
       setLoading(false);
     });
     return () => { alive = false; };
@@ -149,7 +153,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const clock = scenario === "commuter"
     ? (delivered > 0 ? COMMUTER_ALERTS[delivered - 1].clock : COMMUTER_START_CLOCK)
-    : DELAY_STEPS[delayStep].clock;
+    : (!USE_MOCKS && status?.estimate.as_of) || DELAY_STEPS[delayStep].clock;
 
   const value = useMemo<Store>(() => ({
     route, push, back, reset, scenario, clock,

@@ -158,8 +158,33 @@ def _to_alternatives(category: AlternativeCategory, scored: list[tuple[float, Ca
             score=round(max(0.0, 100.0 - (value - best)), 1),
         )
         alt.ticket_valid, alt.ticket_hint = check_ticket(alt)
+        _add_display_fields(alt, category, c)
         out.append(alt)
     return out
+
+
+def _add_display_fields(alt: Alternative, category: AlternativeCategory, c: Candidate) -> None:
+    """Optional fields of the contract that the frontend shows (title, departure, certainty)."""
+    rides = [leg for leg in alt.legs if leg.mode not in ("walk", "wait")]
+    alt.departure = (rides or alt.legs)[0].departure if alt.legs else None
+    alt.uses_blocked_line = category == AlternativeCategory.WAIT
+    if category == AlternativeCategory.WAIT:
+        alt.title = "Wait for the line to reopen"
+        alt.certainty, alt.certainty_reason = "uncertain", "Depends on when the line reopens"
+        return
+    if not c.at_destination:
+        alt.title = f"Get off at {alt.final_stop.name}"
+    elif len(rides) > 1:
+        alt.title = f"Go via {rides[0].to_stop.name}"
+    else:
+        alt.title = f"Direct {rides[0].line or 'connection'}" if rides else "Alternative route"
+    if not c.at_destination:
+        alt.certainty = "likely"
+        alt.certainty_reason = f"Ends {c.distance_km:.1f} km from your destination"
+    elif c.uses_replacement_bus:
+        alt.certainty, alt.certainty_reason = "likely", "Replacement buses can be slowed by traffic"
+    else:
+        alt.certainty, alt.certainty_reason = "safe", "Avoids the blocked section"
 
 
 def _is_noise(leg) -> bool:

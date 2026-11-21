@@ -5,8 +5,7 @@
 // 4. Two or three other options. Everything else is one tap away.
 import { useStore } from "../store";
 import type { Alternative, DisruptionStatus, Journey } from "../types";
-import { atTime, durationLabel, hhmm, minutesBetween } from "../lib/format";
-import { DELAY_DAY } from "../mocks/scenario";
+import { atTime, durationLabel, hhmm, minutesBetween, swissDay } from "../lib/format";
 import { otherOptions, rankedOptions } from "../mocks/applyPreferences";
 import { ChanceBadge, Chip, ConnectionCard, Header, Icon, labelFor, LineBadge, PillRow, SectionTitle } from "../components/ui";
 import { preferencesSummary } from "./PersonaliseSheet";
@@ -61,10 +60,10 @@ function StatusCard({ status, onMore }: { status: DisruptionStatus; onMore: () =
 }
 
 function DeadlineQuestion({ destination }: { destination: string }) {
-  const { prefs, setPrefs } = useStore();
+  const { prefs, setPrefs, clock } = useStore();
   const current = prefs.deadline ? hhmm(prefs.deadline) : null;
   const isOther = current != null && !DEADLINES.includes(current);
-  const set = (hm: string | null) => setPrefs({ ...prefs, deadline: hm ? atTime(DELAY_DAY, hm) : null });
+  const set = (hm: string | null) => setPrefs({ ...prefs, deadline: hm ? atTime(swissDay(clock), hm) : null });
 
   return (
     <section className="card question">

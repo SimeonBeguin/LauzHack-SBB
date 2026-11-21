@@ -249,6 +249,25 @@ class DemoScenario:
     detour_via_ids: list[str]
     starts_before_departure: timedelta  # incident began this long before the planned departure
     official_duration: timedelta  # SBB announced end = start + this
+    reason_id: str = "EG_010"  # cause code for the estimate (EG_010 = infrastructure fault)
+    checked_before_departure: timedelta = timedelta(minutes=10)  # "now" of the scenario
+
+    def start(self, journey: Journey) -> datetime:
+        return journey.departure - self.starts_before_departure
+
+    def official_end(self, journey: Journey) -> datetime:
+        return self.start(journey) + self.official_duration
+
+    def now(self, journey: Journey) -> datetime:
+        return journey.departure - self.checked_before_departure
+
+    def estimate(self, journey: Journey, at: datetime | None = None) -> ReopeningEstimate:
+        """Estimate from workstream A for this fictitious live incident (shared by
+        the status endpoint and the routing, so both show the same times)."""
+        from app.estimation.estimator import estimate_live
+
+        return estimate_live(self.reason_id, self.start(journey), official_end=self.official_end(journey),
+                             at=at or self.now(journey))
 
 
 DEMO_SCENARIOS: dict[str, DemoScenario] = {
@@ -266,24 +285,21 @@ DEMO_SCENARIOS: dict[str, DemoScenario] = {
 
 def get_disruption(journey: Journey, client: OJPClient | None = None) -> DisruptionContext | None:
     """Disruption affecting this journey, or None if we cannot find one."""
-    from app.estimation.estimator import estimate_reopening
-
     client = client or OJPClient()
     scenario = DEMO_SCENARIOS.get(journey.id)
     if scenario:
-        start = journey.departure - scenario.starts_before_departure
         section = build_section(client, scenario.section_from, scenario.section_to, journey.departure,
                                 scenario.detour_via_ids)
         if section is None:
             return None
-        estimate = estimate_reopening(scenario.incident_id, official_end=start + scenario.official_duration)
-        return DisruptionContext(scenario.incident_id, section, start, estimate)
+        return DisruptionContext(scenario.incident_id, section, scenario.start(journey), scenario.estimate(journey))
 
     # Generic path: read the affected section from workstream A's status endpoint.
     try:
         from app.api.disruptions import journey_status
 
-        status = journey_status(journey.id)
+        # Call with explicit values: the defaults of the endpoint are FastAPI Query objects.
+        status = journey_status(journey.id, at=None, minutes_since_start=None, live=False)
     except Exception as exc:  # status not available for this journey
         log.warning("No disruption status for %s: %s", journey.id, exc)
         return None
@@ -293,5 +309,5 @@ def get_disruption(journey: Journey, client: OJPClient | None = None) -> Disrupt
     section = build_section(client, names[0], names[1], journey.departure)
     if section is None:
         return None
-    start = min(status.last_update, journey.departure) - timedelta(minutes=30)
+    start = status.started_at or min(status.last_update, journey.departure) - timedelta(minutes=30)
     return DisruptionContext(status.incident_id, section, start, status.estimate)

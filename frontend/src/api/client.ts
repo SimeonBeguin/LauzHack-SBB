@@ -6,12 +6,18 @@ import type {
   AlternativesResponse, CommuterTrip, DepartureRisk, DisruptionStatus, IncidentDetails, IncidentTimeline,
   Notification, Preferences,
 } from "../types";
-import { DELAY_DETAILS, DELAY_STEPS, INCIDENT_START } from "../mocks/scenario";
+import { DELAY_DETAILS, DELAY_JOURNEY, DELAY_STEPS } from "../mocks/scenario";
 import { applyPreferences } from "../mocks/applyPreferences";
 import { minutesBetween } from "../lib/format";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS !== "false";
+// Journey shown in delay mode. With the backend: "demo-zh" (Zürich HB -> Hinwil,
+// interruption Uster - Wetzikon ZH, OJP alternatives) by default, or "demo-1"
+// (Lausanne -> Bern, real incident of 25.09.2026, same as the mocks).
+export const JOURNEY_ID: string = USE_MOCKS
+  ? DELAY_JOURNEY.id
+  : (import.meta.env.VITE_JOURNEY_ID ?? "demo-zh");
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
@@ -48,7 +54,12 @@ const stepOf = (step: number) => DELAY_STEPS[Math.min(step, DELAY_STEPS.length -
 
 /** Replay options matching a step of the presenter panel. */
 export function replayFor(step: number): ReplayOptions {
-  return { minutesSinceStart: minutesBetween(INCIDENT_START, stepOf(step).clock), live: false };
+  // demo-1 replays the real incident: ask for the exact moment of the step.
+  if (JOURNEY_ID === DELAY_JOURNEY.id) return { at: stepOf(step).clock, live: false };
+  // Other journeys (demo-zh): step 0 = the scenario's "now", later steps move time
+  // forward by the same amount as the presenter steps.
+  if (step === 0) return { live: false };
+  return { minutesSinceStart: 5 + minutesBetween(DELAY_STEPS[0].clock, stepOf(step).clock), live: false };
 }
 
 /** `step` = index of the replayed incident version (presenter panel). */
