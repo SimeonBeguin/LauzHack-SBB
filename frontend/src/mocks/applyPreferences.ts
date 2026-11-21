@@ -2,13 +2,13 @@
 // - disable options that contradict the user's answers (with the reason),
 // - compute the chance to arrive by the user's deadline,
 // - re-sort each list and pick one recommended option.
-import type { Alternative, AlternativeCategory, AlternativesResponse, Certainty, Preferences, ProbabilityPoint } from "../types";
+import type { Alternative, AlternativeCategory, AlternativesResponse, Certainty, Preferences, EndProbability } from "../types";
 import { onTimeChance } from "../lib/chance";
 
 const BUS_MODES = new Set(["bus", "replacement_bus"]);
 const CERTAINTY_RANK: Record<Certainty, number> = { safe: 0, likely: 1, uncertain: 2 };
 
-function check(a: Alternative, p: Preferences, curve: ProbabilityPoint[], now: string): Alternative {
+function check(a: Alternative, p: Preferences, curve: EndProbability[], now: string): Alternative {
   const reasons: string[] = [];
   const warnings = [...(a.warnings ?? [])];
 
@@ -87,7 +87,7 @@ export function pickAdvice(res: AlternativesResponse, p: Preferences): Alternati
   return rankedOptions(res, p)[0] ?? null;
 }
 
-export function applyPreferences(res: AlternativesResponse, p: Preferences, curve: ProbabilityPoint[], now: string): AlternativesResponse {
+export function applyPreferences(res: AlternativesResponse, p: Preferences, curve: EndProbability[], now: string): AlternativesResponse {
   const by = {} as AlternativesResponse["by_category"];
   for (const [cat, list] of Object.entries(res.by_category) as [AlternativeCategory, Alternative[]][]) {
     by[cat] = list.map((a) => check(a, p, curve, now)).sort(compare(cat, p));

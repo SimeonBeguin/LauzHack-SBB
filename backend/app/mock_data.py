@@ -18,6 +18,29 @@ DEMO_JOURNEY = Journey(
 DEMO_INCIDENT_ID = "2195004439194"
 
 
+def _next_weekday_at(hour: int, minute: int) -> datetime:
+    """Today at hh:mm if it is a weekday and not past yet, else the next weekday."""
+    t = _now.replace(hour=hour, minute=minute)
+    while t.weekday() >= 5 or t < _now:
+        t = (t + timedelta(days=1)).replace(hour=hour, minute=minute)
+    return t
+
+
+# Agreed demo scenario (routing): weekday return commute, S14 Zürich HB -> Hinwil,
+# interrupted between Uster and Wetzikon ZH (see app/routing/disruption.py).
+_zh_dep = _next_weekday_at(17, 42)
+DEMO_JOURNEY_ZH = Journey(
+    id="demo-zh",
+    origin=Stop(id="8503000", name="Zürich HB", lat=47.37818, lon=8.54019),
+    destination=Stop(id="8503130", name="Hinwil", lat=47.30006, lon=8.83972),
+    departure=_zh_dep,
+    arrival=_zh_dep + timedelta(minutes=40),
+    line="S14",
+)
+
+JOURNEYS = {j.id: j for j in (DEMO_JOURNEY, DEMO_JOURNEY_ZH)}
+
+
 def get_journey(journey_id: str) -> Journey:
     # TODO: replace with a real lookup (OJP or the user's saved journey)
-    return DEMO_JOURNEY
+    return JOURNEYS.get(journey_id, DEMO_JOURNEY)

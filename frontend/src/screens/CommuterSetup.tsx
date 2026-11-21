@@ -49,8 +49,9 @@ export default function CommuterSetup() {
 
   return (
     <>
-      <Header title="Regular trip" subtitle="We warn you before your train is hit" onBack={back} />
-      <div className="content">
+      <Header title="Regular trip" onBack={back} />
+      <div className="content overlap">
+        <p className="intro-card card">We warn you before your train is affected, even when the problem starts on an earlier train.</p>
         <section className="card form">
           <label className="field">
             <span>From</span>

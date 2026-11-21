@@ -16,5 +16,10 @@ class Settings(BaseSettings):
     here_api_key: str = ""
     data_dir: Path = REPO_ROOT / "Daten"
 
+    # Routing (workstream B)
+    ojp_mode: str = "live"  # live | record | replay | auto (see app/routing/ojp_client.py)
+    ojp_recordings_dir: Path = REPO_ROOT / "backend" / "data" / "ojp_recordings"
+    cache_dir: Path = REPO_ROOT / "backend" / "data" / "cache"  # downloaded static data, git-ignored
+
 
 settings = Settings()

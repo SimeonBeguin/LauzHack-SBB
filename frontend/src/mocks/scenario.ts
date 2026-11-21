@@ -229,22 +229,27 @@ const altsV4 = response({
   wait: [as(directNow, "wait")],
 });
 
-// --- Internal details (KULT ticker) ---
+// --- Internal details (KULT ticker), same shape as GET /journeys/{id}/details ---
+export const INCIDENT_START = t("16:31");
 const detailsV1: IncidentDetails = {
-  source: "SBB operations (internal ticker)",
-  summary: "Fire near the track between Puidoux and Vauderens. Fire brigade on site. Lines Lausanne – Fribourg and Lausanne – Payerne are interrupted.",
-  cancelled_trains: [
+  incident_id: "2195005195853", found: true, kult_case_id: null, match_score: null,
+  match_explanation: "PLACEHOLDER: replace with the backend KULT match",
+  operating_concept: "Fire near the track between Puidoux and Vauderens. Fire brigade on site. Lines Lausanne – Fribourg and Lausanne – Payerne are interrupted.",
+  lines_affected: ["IC1", "IR15", "S4", "S5"],
+  cancelled_or_diverted_trains: [
     "IC 1 17:20 Lausanne → Bern: cancelled between Lausanne and Fribourg",
     "IR 15 17:24 Lausanne → Luzern: starts in Fribourg",
     "S 4 / S 5: cancelled between Puidoux and Palézieux",
   ],
-  replacement_bus: [],
-  recommendation: "To Bern: travel via Neuchâtel. To Fribourg: travel via Yverdon – Payerne.",
-  ticket_rules: "Tickets are valid via Neuchâtel and via Yverdon – Payerne at no extra cost.",
+  replacement_buses: [],
+  travel_recommendations: ["To Bern: travel via Neuchâtel. To Fribourg: travel via Yverdon – Payerne."],
+  ticket_goodwill: ["Tickets are valid via Neuchâtel and via Yverdon – Payerne at no extra cost."],
+  internal_messages: [],
+  internal_lead_minutes: 36,
 };
 const detailsV2: IncidentDetails = {
   ...detailsV1,
-  replacement_bus: [
+  replacement_buses: [
     "Puidoux → Palézieux → Oron → Vauderens, about every 20 min",
     "Stops: station forecourt in Puidoux and Palézieux, bus stop “Gare” in Vauderens",
     "Not step-free. Limited room for luggage and bikes.",
@@ -256,7 +261,7 @@ function status(p: Partial<DisruptionStatus> & Pick<DisruptionStatus, "estimate"
   return {
     incident_id: INCIDENT_ID, journey_id: DELAY_JOURNEY.id, title: TITLE, reason: REASON,
     affected_section: SECTION, kind: "interruption", started_at: t("16:31"),
-    journey: DELAY_JOURNEY, changes: [], details: detailsV1, ...p,
+    journey: DELAY_JOURNEY, changes: [], ...p,
   };
 }
 
@@ -266,14 +271,17 @@ const estimateV1 = {
   confidence: 0.8, similar_incidents_count: 23,
   explanation: "Based on 23 similar incidents (fire near the track, 2024–2026)",
   probabilities: [
-    { before: t("17:30"), p: 0.15 },
-    { before: t("18:00"), p: 0.4 },
-    { before: t("18:30"), p: 0.62 },
-    { before: t("19:00"), p: 0.8 },
-    { before: t("20:00"), p: 0.92 },
+    { time: t("17:30"), probability_ended: 0.15 },
+    { time: t("18:00"), probability_ended: 0.4 },
+    { time: t("18:30"), probability_ended: 0.62 },
+    { time: t("19:00"), probability_ended: 0.8 },
+    { time: t("20:00"), probability_ended: 0.92 },
   ],
   margin_until: t("19:00"), reliability: "fair" as const,
 };
+
+/** Internal details per replay step (index = DELAY_STEPS index). */
+export const DELAY_DETAILS: IncidentDetails[] = [detailsV1, detailsV2, detailsV2, detailsV2];
 
 export interface DelayStep {
   /** Shown in the presenter panel */
@@ -296,7 +304,7 @@ export const DELAY_STEPS: DelayStep[] = [
     label: "17:12 · Replacement buses running",
     clock: t("17:12"),
     status: status({
-      estimate: estimateV1, last_update: t("17:10"), details: detailsV2,
+      estimate: estimateV1, last_update: t("17:10"),
       changes: ["Replacement buses now run between Puidoux and Vauderens"],
     }),
     alternatives: altsV1,
@@ -306,7 +314,7 @@ export const DELAY_STEPS: DelayStep[] = [
     label: "17:46 · SBB moves reopening to ~18:45",
     clock: t("17:46"),
     status: status({
-      last_update: t("17:46"), details: detailsV2,
+      last_update: t("17:46"),
       changes: ["SBB moved the expected reopening from ~18:00 to ~18:45", "Your options were re-ranked"],
       estimate: {
         official_end: t("18:45"), official_label: "around",
@@ -314,10 +322,10 @@ export const DELAY_STEPS: DelayStep[] = [
         confidence: 0.85, similar_incidents_count: 23,
         explanation: "Based on 23 similar incidents (fire near the track, 2024–2026), already 1 h 15 long",
         probabilities: [
-          { before: t("18:15"), p: 0.3 },
-          { before: t("18:45"), p: 0.55 },
-          { before: t("19:30"), p: 0.85 },
-          { before: t("20:30"), p: 0.95 },
+          { time: t("18:15"), probability_ended: 0.3 },
+          { time: t("18:45"), probability_ended: 0.55 },
+          { time: t("19:30"), probability_ended: 0.85 },
+          { time: t("20:30"), probability_ended: 0.95 },
         ],
         margin_until: t("19:30"), reliability: "fair",
       },
@@ -330,7 +338,7 @@ export const DELAY_STEPS: DelayStep[] = [
     clock: t("18:15"),
     status: status({
       title: "Service resumed: Puidoux – Vauderens", kind: "resolved",
-      last_update: t("18:15"), details: detailsV2,
+      last_update: t("18:15"),
       changes: ["The line reopened at 18:15, 30 min earlier than announced"],
       estimate: {
         official_end: t("18:15"), official_label: "reopened at",

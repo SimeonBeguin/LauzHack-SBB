@@ -1,5 +1,30 @@
-"""Build and rank alternatives for the 4 categories: fastest, nearby, comfort, wait."""
+"""Build and rank alternatives for the 4 categories: fastest, nearby, comfort, wait.
 
+Each candidate gets a *cost* in "equivalent minutes" per category (lower is
+better). The list is sorted by cost and ``score`` = 100 for the best option,
+minus one point per extra equivalent minute (floored at 0).
+
+Weights (equivalent minutes):
+
+| term                     | fastest | nearby | comfort |
+|--------------------------|---------|--------|---------|
+| arrival delay (per min)  | 1       | 1      | 1       |
+| per transfer             | 3       | 3      | 12      |
+| per regular bus leg      | 0       | 0      | 8       |
+| replacement bus          | 10      | 10     | 30      |
+| per walking minute       | 0       | 0      | 0.5     |
+| per km left to the dest. | -       | 4      | -       |
+
+Preferences are hard filters (an option is hidden), unless that would leave
+the list empty, in which case the options stay with a heavy penalty:
+``avoid_replacement_bus`` (+60), ``max_transfers`` (+30 per extra transfer),
+``deadline`` (+120). "Wait" options get a risk penalty of half the gap
+between the official reopening time and our conservative estimate.
+"""
+
+from __future__ import annotations
+
+import logging
 from datetime import datetime, timedelta
 
 from app.models import (
@@ -8,24 +33,148 @@ from app.models import (
     AlternativesResponse,
     Journey,
     Preferences,
-    Stop,
 )
+from app.routing.disruption import DisruptionContext, get_disruption
+from app.routing.ojp_client import OJPClient, OJPError, to_model_leg
+from app.routing.planner import Candidate, PlanResult, minutes_between, plan
+from app.routing.ticket_validity import check_ticket
+
+log = logging.getLogger(__name__)
+
+MAX_PER_CATEGORY = 5
+MAX_GAP_TO_BEST = 90  # drop options more than this many equivalent minutes behind the best (keep >= 2)
+
+WEIGHTS = {
+    AlternativeCategory.FASTEST: dict(transfer=3, bus=0, replacement=10, walk=0, km=0),
+    AlternativeCategory.NEARBY: dict(transfer=3, bus=0, replacement=10, walk=0, km=4),
+    AlternativeCategory.COMFORT: dict(transfer=12, bus=8, replacement=30, walk=0.5, km=0),
+}
+PENALTY_AVOIDED_BUS = 60
+PENALTY_EXTRA_TRANSFER = 30
+PENALTY_DEADLINE = 120
 
 
-def find_alternatives(journey: Journey, prefs: Preferences) -> AlternativesResponse:
-    # TODO:
-    # 1. FASTEST: OJP trip search origin -> destination, avoiding the blocked section
-    # 2. NEARBY:  OJP searches to stops_within_radius(destination, prefs.destination_radius_km)
-    # 3. COMFORT: re-rank by transfers, no replacement bus, accessibility
-    # 4. WAIT:    planned route + estimate_reopening() as a real option
-    # Then apply prefs (deadline, avoid_replacement_bus) and score/sort each list.
-    return _mock_response(journey)
+def find_alternatives(journey: Journey, prefs: Preferences, client: OJPClient | None = None) -> AlternativesResponse:
+    client = client or OJPClient()
+    try:
+        ctx = get_disruption(journey, client)
+        result = plan(journey, prefs, ctx, client)
+    except OJPError as exc:
+        log.warning("OJP unavailable, returning mock alternatives: %s", exc)
+        return _mock_response(journey)
+    return build_response(journey, prefs, result, ctx)
+
+
+def build_response(
+    journey: Journey, prefs: Preferences, result: PlanResult, ctx: DisruptionContext | None
+) -> AlternativesResponse:
+    at_dest = [c for c in result.candidates if c.at_destination]
+    nearby = [c for c in result.candidates
+              if not c.at_destination and c.distance_km <= prefs.destination_radius_km]
+    nearby = _best_per_stop(nearby, journey) or at_dest
+
+    by_category = {
+        AlternativeCategory.FASTEST: _rank(AlternativeCategory.FASTEST, at_dest, journey, prefs),
+        AlternativeCategory.NEARBY: _rank(AlternativeCategory.NEARBY, nearby, journey, prefs),
+        AlternativeCategory.COMFORT: _rank(AlternativeCategory.COMFORT, at_dest, journey, prefs),
+        AlternativeCategory.WAIT: _rank_wait(result.wait, journey, ctx),
+    }
+    return AlternativesResponse(journey_id=journey.id, by_category=by_category)
+
+
+def _best_per_stop(cands: list[Candidate], journey: Journey) -> list[Candidate]:
+    best: dict[str, Candidate] = {}
+    for c in cands:
+        cur = best.get(c.final_stop.id)
+        if cur is None or c.trip.arrival < cur.trip.arrival:
+            best[c.final_stop.id] = c
+    return list(best.values())
+
+
+def cost(category: AlternativeCategory, c: Candidate, journey: Journey) -> float:
+    w = WEIGHTS[category]
+    value = minutes_between(journey.arrival, c.trip.arrival)
+    value += w["transfer"] * c.trip.transfers
+    value += w["bus"] * sum(1 for leg in c.trip.pt_legs if leg.mode == "bus")
+    value += w["replacement"] * (1 if c.uses_replacement_bus else 0)
+    value += w["walk"] * c.walk_minutes
+    value += w["km"] * c.distance_km
+    return value
+
+
+def _preference_penalty(c: Candidate, prefs: Preferences) -> float:
+    penalty = 0.0
+    if prefs.avoid_replacement_bus and c.uses_replacement_bus:
+        penalty += PENALTY_AVOIDED_BUS
+    if prefs.max_transfers is not None and c.trip.transfers > prefs.max_transfers:
+        penalty += PENALTY_EXTRA_TRANSFER * (c.trip.transfers - prefs.max_transfers)
+    if prefs.deadline is not None and c.trip.arrival > _aware(prefs.deadline, c.trip.arrival):
+        penalty += PENALTY_DEADLINE
+    return penalty
+
+
+def _aware(t: datetime, like: datetime) -> datetime:
+    return t if t.tzinfo else t.replace(tzinfo=like.tzinfo)
+
+
+def _rank(category: AlternativeCategory, cands: list[Candidate], journey: Journey,
+          prefs: Preferences) -> list[Alternative]:
+    if not cands:
+        return []
+    ok = [c for c in cands if _preference_penalty(c, prefs) == 0]
+    pool = ok or cands  # never return an empty list just because of preferences
+    scored = sorted(((cost(category, c, journey) + _preference_penalty(c, prefs), c) for c in pool),
+                    key=lambda x: (x[0], x[1].trip.arrival))
+    return _to_alternatives(category, scored[:MAX_PER_CATEGORY])
+
+
+def _rank_wait(cands: list[Candidate], journey: Journey, ctx: DisruptionContext | None) -> list[Alternative]:
+    scored = []
+    for c in cands:
+        value = minutes_between(journey.arrival, c.trip.arrival)
+        if ctx is not None and c.source == "wait":
+            # relying on the official time: add part of the risk that it slips
+            value += 0.5 * max(0.0, minutes_between(ctx.reopening_official, ctx.reopening_safe))
+        scored.append((value, c))
+    scored.sort(key=lambda x: x[0])
+    return _to_alternatives(AlternativeCategory.WAIT, scored[:MAX_PER_CATEGORY])
+
+
+def _to_alternatives(category: AlternativeCategory, scored: list[tuple[float, Candidate]]) -> list[Alternative]:
+    if not scored:
+        return []
+    best = scored[0][0]
+    scored = [x for i, x in enumerate(scored) if i < 2 or x[0] - best <= MAX_GAP_TO_BEST]
+    out = []
+    for i, (value, c) in enumerate(scored, start=1):
+        alt = Alternative(
+            id=f"{category.value}-{i}",
+            category=category,
+            legs=[to_model_leg(leg) for leg in c.trip.legs if not _is_noise(leg)],
+            arrival=c.trip.arrival,
+            final_stop=c.final_stop,
+            distance_to_destination_km=c.distance_km,
+            transfers=c.trip.transfers,
+            score=round(max(0.0, 100.0 - (value - best)), 1),
+        )
+        alt.ticket_valid, alt.ticket_hint = check_ticket(alt)
+        out.append(alt)
+    return out
+
+
+def _is_noise(leg) -> bool:
+    """Zero-length walks inside the same station."""
+    return leg.mode == "walk" and leg.board.name == leg.alight.name and leg.arrival - leg.departure <= timedelta(minutes=5)
 
 
 def score(alt: Alternative, prefs: Preferences) -> float:
-    # TODO: weights per category
-    raise NotImplementedError
+    """Kept for compatibility: the score is computed in find_alternatives()."""
+    return alt.score
 
+
+# ---------------------------------------------------------------------------
+# Fallback when OJP is not reachable (no key, offline without recordings)
+# ---------------------------------------------------------------------------
 
 def _mock_response(journey: Journey) -> AlternativesResponse:
     base = journey.arrival

@@ -12,6 +12,7 @@ import IncidentDetails from "./screens/IncidentDetails";
 import CommuterSetup from "./screens/CommuterSetup";
 import LockScreen, { NotificationCard } from "./screens/LockScreen";
 import CommuterAlert from "./screens/CommuterAlert";
+import ConnectionDetail from "./screens/ConnectionDetail";
 import DemoPanel from "./demo/DemoPanel";
 import { Icon } from "./components/ui";
 
@@ -25,6 +26,7 @@ function Screen() {
     case "commuterSetup": return <CommuterSetup />;
     case "lock": return <LockScreen />;
     case "commuterAlert": return <CommuterAlert index={route.index} />;
+    case "connection": return <ConnectionDetail id={route.id} />;
   }
 }
 
@@ -40,24 +42,32 @@ function StatusBar({ dark }: { dark: boolean }) {
   );
 }
 
-// Bottom navigation like the SBB app. Only "My trips" is part of the prototype.
+// Bottom navigation like the SBB app: 6 icons, the active one in a raised black circle.
+const TABS = [
+  { id: "plan", label: "Plan", icon: "plan" },
+  { id: "trips", label: "My trips", icon: "trips" },
+  { id: "easyride", label: "EasyRide", icon: "toggle" },
+  { id: "tickets", label: "Tickets", icon: "qr" },
+  { id: "shop", label: "Shop & Services", icon: "shop" },
+  { id: "profile", label: "Profile", icon: "user" },
+];
+
 function TabBar() {
   const { reset, showToast, route } = useStore();
-  const tabs = [
-    { id: "timetable", label: "Timetable", icon: "timetable" },
-    { id: "tickets", label: "Tickets", icon: "ticket" },
-    { id: "trips", label: "My trips", icon: "trips" },
-    { id: "profile", label: "Profile", icon: "user" },
-  ];
+  const activeId = ["disruption", "list", "details", "connection"].includes(route.name) ? "plan" : "trips";
   return (
     <nav className="tabbar">
-      {tabs.map((t) => {
-        const active = t.id === "trips";
+      {TABS.map((t) => {
+        const active = t.id === activeId;
         return (
-          <button key={t.id} className={active ? "active" : ""} aria-current={active ? "page" : undefined}
-            onClick={() => (active ? route.name !== "home" && reset({ name: "home" }) : showToast("Not part of this prototype"))}>
-            <Icon name={t.icon} size={22} />
-            <span>{t.label}</span>
+          <button key={t.id} className={active ? "active" : ""} aria-current={active ? "page" : undefined} aria-label={t.label}
+            onClick={() => {
+              if (t.id === "trips") reset({ name: "home" });
+              else if (t.id === "plan") reset({ name: "disruption" });
+              else showToast("Not part of this prototype");
+            }}>
+            <span className="tab-icon"><Icon name={t.icon} size={26} /></span>
+            {active && <span className="tab-label">{t.label}</span>}
           </button>
         );
       })}

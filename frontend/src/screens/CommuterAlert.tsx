@@ -4,7 +4,7 @@ import { useStore } from "../store";
 import { COMMUTER_ALERTS, COMMUTER_TRIP } from "../mocks/scenario";
 import { hhmm } from "../lib/format";
 import { chanceLabel } from "../lib/chance";
-import { CertaintyBadge, ChanceBadge, Header, Icon } from "../components/ui";
+import { CertaintyBadge, ChanceBadge, Header, Icon, LineBadge } from "../components/ui";
 
 const STATE_LABEL = { stuck: "Stopped", cancelled: "Cancelled", at_risk: "May be affected", ok: "Running" };
 
@@ -18,14 +18,20 @@ export default function CommuterAlert({ index }: { index: number }) {
 
   return (
     <>
-      <Header
-        title={`Your ${trip.departure_time} to ${trip.destination_name?.split("/")[0]}`}
-        subtitle={`${trip.line}, ${trip.origin_name} → ${trip.destination_name}`}
-        onBack={back}
-      />
-      <div className="content">
-        <section className={`status-box ${resolved ? "ok" : ""}`}>
-          <Icon name={resolved ? "check" : "alert"} size={22} />
+      <Header title="Alert" onBack={back} />
+      <div className="content overlap">
+        <section className="card summary">
+          <h2 className="summary-title">{trip.origin_name} <span className="arrow">→</span> {trip.destination_name}</h2>
+          <div className={`timeline ${resolved ? "" : "cancelled"}`}>
+            <LineBadge line={trip.line ?? "Train"} mode="train" />
+            <strong>{trip.departure_time}</strong>
+            <span className="tl-track" aria-hidden="true" />
+            <strong>{trip.arrival_time}</strong>
+          </div>
+          <p className="summary-sub">Your regular trip · alert at {hhmm(n.created_at)}</p>
+        </section>
+        <section className={`card status-card ${resolved ? "ok" : ""}`}>
+          <Icon name={resolved ? "check" : "alert"} size={26} />
           <div>
             <strong>{a.headline}</strong>
             <p>{n.body}</p>
@@ -63,7 +69,7 @@ export default function CommuterAlert({ index }: { index: number }) {
           </section>
         ))}
 
-        {a.footer && <section className="status-box ok"><Icon name="check" size={22} /><div><strong>{a.footer}</strong></div></section>}
+        {a.footer && <section className="card status-card ok"><Icon name="check" size={26} /><div><strong>{a.footer}</strong></div></section>}
 
         <details className="card why">
           <summary>Why are we telling you this? <Icon name="down" size={16} /></summary>

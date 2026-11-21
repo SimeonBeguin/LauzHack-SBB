@@ -1,6 +1,5 @@
 // Mirror of backend/app/models.py. Keep both in sync.
-// Fields marked "(UI)" were added for the frontend. They are optional, so the
-// current backend stubs still validate.
+// Fields marked "(UI)" were added by the frontend; they are optional.
 
 export interface Stop { id: string; name: string; lat?: number | null; lon?: number | null }
 
@@ -8,49 +7,78 @@ export interface Journey {
   id: string; origin: Stop; destination: Stop; departure: string; arrival: string; line: string;
 }
 
-/** "There is a p chance the line has reopened before `before`." (UI) */
-export interface ProbabilityPoint { before: string; p: number }
+export interface EndProbability {
+  time: string;
+  probability_ended: number; // 0.7 = "over by then in 70 % of similar cases"
+}
 
 export type Reliability = "good" | "fair" | "low";
 
 export interface ReopeningEstimate {
   official_end: string | null;
-  /** How SBB phrases the end: "around", "at least until", "until" (UI) */
-  official_label?: string | null;
-  likely_end_earliest: string | null;
-  likely_end_latest: string | null;
-  confidence: number | null;
+  likely_end_earliest: string | null; // never after official_end
+  likely_end_latest: string | null;   // never before official_end
+  confidence: number | null;          // P(end inside the likely range)
   similar_incidents_count: number;
   explanation: string;
-  /** Cumulative probabilities, sorted by time (UI) */
-  probabilities?: ProbabilityPoint[];
-  /** Advice: "plan a margin until ..." (UI) */
-  margin_until?: string | null;
-  /** Calibration quality of the model for this kind of incident (UI) */
+  // Added by Data & estimation (optional in the mocks)
+  ended?: boolean;
+  as_of?: string | null;
+  elapsed_minutes?: number | null;
+  median_end?: string | null;
+  wide_end_earliest?: string | null; // 10th percentile
+  wide_end_latest?: string | null;   // 90th percentile
+  probabilities?: EndProbability[];
+  method?: string; // "official_corrected" | "survival" | "ended" | "mock"
+  // (UI)
+  official_label?: string | null;    // "around", "at least until", "until"
+  margin_until?: string | null;      // "to be safe, count on ..."
   reliability?: Reliability | null;
 }
 
 export type DisruptionKind = "interruption" | "restriction" | "resolved";
 
-/** Internal SBB information (KULT ticker), shown on demand. (UI) */
-export interface IncidentDetails {
-  source: string;
-  summary: string;
-  cancelled_trains: string[];
-  replacement_bus: string[];
-  recommendation: string | null;
-  ticket_rules: string | null;
-}
-
 export interface DisruptionStatus {
   incident_id: string; journey_id: string; title: string;
   reason: string | null; affected_section: string | null;
   estimate: ReopeningEstimate; last_update: string;
-  kind?: DisruptionKind;                 // (UI)
-  started_at?: string | null;            // (UI)
-  journey?: Journey | null;              // (UI) planned journey, for the header
-  changes?: string[];                    // (UI) what changed since the previous version
-  details?: IncidentDetails | null;      // (UI)
+  kind?: DisruptionKind;            // (UI)
+  started_at?: string | null;       // (UI)
+  journey?: Journey | null;         // (UI) planned journey, for the header
+  changes?: string[];               // (UI) what changed since the previous version
+}
+
+export interface TimelinePoint {
+  time: string; title: string; kind: string; duration_type: string | null;
+  official_end: string | null; estimate: ReopeningEstimate; what_changed: string;
+}
+
+export interface IncidentTimeline {
+  incident_id: string; title: string; reason: string | null; affected_section: string | null;
+  start: string; real_end: string | null; points: TimelinePoint[];
+}
+
+export interface DepartureRisk {
+  incident_id: string; departure: string; as_of: string;
+  probability_still_disrupted: number; similar_incidents_count: number; explanation: string;
+}
+
+export interface InternalMessage { time: string; text: string }
+
+export interface IncidentDetails {
+  incident_id: string;
+  found: boolean;
+  kult_case_id: string | null;
+  match_score: number | null;
+  match_explanation: string;
+  operating_concept: string | null;
+  lines_affected: string[];
+  replacement_buses: string[];
+  cancelled_or_diverted_trains: string[];
+  travel_recommendations: string[];
+  ticket_goodwill: string[];
+  internal_messages: InternalMessage[];
+  internal_lead_minutes: number | null;
 }
 
 export interface Preferences {
@@ -79,7 +107,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
 
 export type AlternativeCategory = "fastest" | "nearby" | "comfort" | "wait";
 
-export type LegMode = "train" | "bus" | "replacement_bus" | "walk" | "tram" | "wait";
+export type LegMode = "train" | "bus" | "replacement_bus" | "walk" | "tram" | "metro" | "wait";
 
 export interface Leg {
   mode: LegMode | string; line: string | null; from_stop: Stop; to_stop: Stop;
@@ -92,19 +120,18 @@ export interface Alternative {
   id: string; category: AlternativeCategory; legs: Leg[]; arrival: string; final_stop: Stop;
   distance_to_destination_km: number; transfers: number; score: number;
   ticket_valid: boolean | null; ticket_hint: string | null;
-  title?: string;                      // (UI) "Via Neuchâtel"
-  subtitle?: string;                   // (UI) "IC 5 → RE · 1 transfer"
-  departure?: string;                  // (UI)
+  title?: string | null;               // (UI) "Go via Neuchâtel"
+  subtitle?: string | null;            // (UI)
+  departure?: string | null;           // (UI)
   arrival_latest?: string | null;      // (UI) for ranges, e.g. the "wait" option
-  certainty?: Certainty;               // (UI)
-  certainty_reason?: string;           // (UI) one line of why
+  certainty?: Certainty | null;        // (UI)
+  certainty_reason?: string | null;    // (UI) one line of why
   recommended?: boolean;               // (UI)
   disabled_reason?: string | null;     // (UI) conflicts with the user's answers
-  accessible?: boolean;                // (UI) step-free
+  accessible?: boolean | null;         // (UI) step-free
   uses_blocked_line?: boolean;         // (UI)
-  warnings?: string[];                 // (UI) e.g. "Bus: +5 to +15 min (traffic)"
-  /** (UI) chance to arrive by preferences.deadline; null when no deadline */
-  on_time_probability?: number | null;
+  warnings?: string[];                 // (UI)
+  on_time_probability?: number | null; // (UI) chance to arrive by preferences.deadline
 }
 
 export interface AlternativesResponse {

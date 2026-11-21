@@ -1,9 +1,9 @@
 // App + demo state in one small context: navigation stack, preferences,
 // replay step of the incident, delivered commuter alerts, toasts and banners.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getAlternatives, getJourneyStatus } from "./api/client";
+import { getAlternatives, getJourneyDetails, getJourneyStatus } from "./api/client";
 import { COMMUTER_ALERTS, COMMUTER_START_CLOCK, COMMUTER_TRIP, DELAY_JOURNEY, DELAY_STEPS } from "./mocks/scenario";
-import { DEFAULT_PREFERENCES, type AlternativeCategory, type AlternativesResponse, type CommuterTrip, type DisruptionStatus, type Preferences } from "./types";
+import { DEFAULT_PREFERENCES, type AlternativeCategory, type AlternativesResponse, type CommuterTrip, type DisruptionStatus, type IncidentDetails, type Preferences } from "./types";
 import { showOsNotification } from "./lib/osNotifications";
 
 export type Route =
@@ -13,7 +13,8 @@ export type Route =
   | { name: "details" }
   | { name: "commuterSetup" }
   | { name: "lock" }
-  | { name: "commuterAlert"; index: number };
+  | { name: "commuterAlert"; index: number }
+  | { name: "connection"; id: string };
 
 export type Scenario = "delay" | "commuter";
 
@@ -34,6 +35,7 @@ interface Store {
   delayStep: number;
   setDelayStep: (i: number) => void;
   status: DisruptionStatus | null;
+  details: IncidentDetails | null;
   alternatives: AlternativesResponse | null;
   loading: boolean;
 
@@ -67,6 +69,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [delayStep, setDelayStepRaw] = useState(0);
   const [status, setStatus] = useState<DisruptionStatus | null>(null);
+  const [details, setDetails] = useState<IncidentDetails | null>(null);
   const [alternatives, setAlternatives] = useState<AlternativesResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [trips, setTrips] = useState<CommuterTrip[]>([COMMUTER_TRIP]);
@@ -89,6 +92,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(null), 4000);
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+    getJourneyDetails(DELAY_JOURNEY.id, delayStep).then((d) => alive && setDetails(d)).catch(() => alive && setDetails(null));
+    return () => { alive = false; };
+  }, [delayStep]);
 
   // Fetch status + alternatives once per (step, prefs); screens share the result.
   useEffect(() => {
@@ -145,11 +154,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo<Store>(() => ({
     route, push, back, reset, scenario, clock,
     prefs, setPrefs, sheetOpen, setSheetOpen,
-    delayStep, setDelayStep, status, alternatives, loading,
+    delayStep, setDelayStep, status, details, alternatives, loading,
     trips, saveTrip, delivered, deliverAlert, resetCommuter,
     banner, dismissBanner: () => setBanner(null),
     osEnabled, setOsEnabled, toast, showToast,
-  }), [route, push, back, reset, scenario, clock, prefs, sheetOpen, delayStep, setDelayStep, status, alternatives,
+  }), [route, push, back, reset, scenario, clock, prefs, sheetOpen, delayStep, setDelayStep, status, details, alternatives,
     loading, trips, saveTrip, delivered, deliverAlert, resetCommuter, banner, osEnabled, toast, showToast]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

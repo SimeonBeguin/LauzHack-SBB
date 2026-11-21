@@ -2,8 +2,8 @@
 // registered regular trips (-> commuter alerts).
 import { useStore } from "../store";
 import { COMMUTER_ALERTS } from "../mocks/scenario";
-import { hhmm } from "../lib/format";
-import { Header, Icon, LineBadge, SectionTitle } from "../components/ui";
+import { durationLabel, hhmm, minutesBetween } from "../lib/format";
+import { Header, Icon, LineBadge, PillRow, SectionTitle } from "../components/ui";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -14,6 +14,11 @@ export function weekdaysLabel(days: number[]): string {
   return sorted.map((d) => DAYS[d]).join(", ");
 }
 
+function hm(t: string) {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+}
+
 export default function Home() {
   const { status, push, trips, delivered } = useStore();
   const j = status?.journey;
@@ -22,60 +27,57 @@ export default function Home() {
   return (
     <>
       <Header title="My trips" />
-      <div className="content">
-        <SectionTitle>Today</SectionTitle>
+      <div className="content overlap">
         {j && status && (
-          <article className="card trip-card">
-            <div className="trip-line">
+          <section className="card summary">
+            <h2 className="summary-title">{j.origin.name} <span className="arrow">→</span> {j.destination.name}</h2>
+            <div className={`timeline ${resolved ? "" : "cancelled"}`}>
               <LineBadge line={j.line} mode="train" />
-              <span className="muted small">Direction Bern · Pl. 7</span>
+              <strong>{hhmm(j.departure)}</strong>
+              <span className="tl-track" aria-hidden="true" />
+              <strong>{hhmm(j.arrival)}</strong>
             </div>
-            <div className="trip-times">
-              <div><strong>{hhmm(j.departure)}</strong><span>{j.origin.name}</span></div>
-              <div className="trip-arrow" aria-hidden="true" />
-              <div className="right"><strong>{hhmm(j.arrival)}</strong><span>{j.destination.name}</span></div>
-            </div>
+            <p className="summary-sub">Today, {durationLabel(minutesBetween(j.departure, j.arrival))} · Pl. 7</p>
             {resolved ? (
-              <div className="trip-alert ok"><Icon name="check" size={18} /><span>Trains are running again</span></div>
+              <div className="trip-alert ok"><Icon name="check" size={20} /><span>Trains are running again</span></div>
             ) : (
-              <div className="trip-alert"><Icon name="alert" size={18} /><span><strong>Your train does not run.</strong> {status.reason}.</span></div>
+              <div className="trip-alert"><Icon name="alert" size={20} /><span><b>Your train does not run.</b> {status.reason}.</span></div>
             )}
             <button className="btn btn-primary" onClick={() => push({ name: "disruption" })}>
               {resolved ? "Check my journey" : "What should I do?"}
             </button>
-          </article>
+          </section>
         )}
 
         <SectionTitle>Regular trips</SectionTitle>
         {trips.map((t) => (
-          <button key={t.id} className="card trip-card" onClick={() => push({ name: "commuterSetup" })}>
-            <div className="trip-line">
+          <button key={t.id} className="card summary" onClick={() => push({ name: "commuterSetup" })}>
+            <h2 className="summary-title">{t.origin_name} <span className="arrow">→</span> {t.destination_name}</h2>
+            <div className="timeline">
               <LineBadge line={t.line ?? "Train"} mode="train" />
-              <span className="alerts-on"><Icon name="bell" size={14} /> Alerts on · {weekdaysLabel(t.weekdays)}</span>
+              <strong>{t.departure_time}</strong>
+              <span className="tl-track" aria-hidden="true" />
+              <strong>{t.arrival_time ?? ""}</strong>
             </div>
-            <div className="trip-times">
-              <div><strong>{t.departure_time}</strong><span>{t.origin_name}</span></div>
-              <div className="trip-arrow" aria-hidden="true" />
-              <div className="right"><strong>{t.arrival_time ?? ""}</strong><span>{t.destination_name}</span></div>
-            </div>
+            <p className="summary-sub">
+              {weekdaysLabel(t.weekdays)}
+              {t.arrival_time ? `, ${durationLabel(hm(t.arrival_time) - hm(t.departure_time))}` : ""} · <Icon name="bell" size={14} /> Alerts on
+            </p>
           </button>
         ))}
-        <button className="btn btn-secondary" onClick={() => push({ name: "commuterSetup" })}>
-          <Icon name="plus" size={18} /> Add a regular trip
-        </button>
+        <div className="pill-stack">
+          <PillRow icon="plus" onClick={() => push({ name: "commuterSetup" })}>Add a regular trip</PillRow>
+        </div>
 
         {delivered > 0 && (
           <>
             <SectionTitle>Messages</SectionTitle>
-            <div className="card list-card">
+            <div className="pill-stack">
               {COMMUTER_ALERTS.slice(0, delivered).reverse().map((a, ri) => (
-                <button key={a.notification.id} className="option-row" onClick={() => push({ name: "commuterAlert", index: delivered - 1 - ri })}>
-                  <span className="option-text">
-                    <strong>{a.notification.title}</strong>
-                    <span className="muted small">{hhmm(a.notification.created_at)}</span>
-                  </span>
-                  <Icon name="chevron" size={18} className="muted" />
-                </button>
+                <PillRow key={a.notification.id} icon="bell" lead={<span className="pill-min">{hhmm(a.notification.created_at)}</span>}
+                  onClick={() => push({ name: "commuterAlert", index: delivered - 1 - ri })}>
+                  {a.notification.title}
+                </PillRow>
               ))}
             </div>
           </>

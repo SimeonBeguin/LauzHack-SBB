@@ -1,16 +1,16 @@
 // Detailed reopening estimate. The official SBB time stays the headline; our
 // statistics only add a margin and never replace it.
 import { useState } from "react";
-import type { DisruptionStatus, ProbabilityPoint, ReopeningEstimate } from "../types";
+import type { DisruptionStatus, EndProbability, ReopeningEstimate } from "../types";
 import { hhmm, pct } from "../lib/format";
 import { inTen } from "../lib/chance";
 import { Icon } from "./ui";
 
 const RELIABILITY: Record<string, string> = { good: "good", fair: "fair", low: "low" };
 
-function pointAt(points: ProbabilityPoint[], iso: string | null | undefined) {
+function pointAt(points: EndProbability[], iso: string | null | undefined) {
   if (!iso) return undefined;
-  return points.find((p) => p.before === iso);
+  return points.find((p) => p.time === iso);
 }
 
 /** Cumulative chance that the line has reopened, from now to the last point. */
@@ -21,11 +21,11 @@ function ProbabilityChart({ estimate, now }: { estimate: ReopeningEstimate; now:
 
   const W = 320, H = 112, L = 8, R = 8, T = 22, B = 24;
   const t0 = new Date(now).getTime();
-  const t1 = new Date(pts[pts.length - 1].before).getTime();
+  const t1 = new Date(pts[pts.length - 1].time).getTime();
   const x = (iso: string) => L + ((new Date(iso).getTime() - t0) / (t1 - t0)) * (W - L - R);
   const y = (p: number) => T + (1 - p) * (H - T - B);
 
-  const line = [[x(now), y(0)], ...pts.map((p) => [x(p.before), y(p.p)])];
+  const line = [[x(now), y(0)], ...pts.map((p) => [x(p.time), y(p.probability_ended)])];
   const linePath = line.map(([a, b], i) => `${i ? "L" : "M"}${a.toFixed(1)},${b.toFixed(1)}`).join(" ");
   const areaPath = `${linePath} L${line[line.length - 1][0].toFixed(1)},${y(0)} L${line[0][0].toFixed(1)},${y(0)} Z`;
 
@@ -40,7 +40,7 @@ function ProbabilityChart({ estimate, now }: { estimate: ReopeningEstimate; now:
   return (
     <div className="chart">
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img"
-        aria-label={`Chance the line has reopened: ${pts.map((p) => `${pct(p.p)} before ${hhmm(p.before)}`).join(", ")}`}>
+        aria-label={`Chance the line has reopened: ${pts.map((p) => `${pct(p.probability_ended)} before ${hhmm(p.time)}`).join(", ")}`}>
         <line x1={L} x2={W - R} y1={y(0)} y2={y(0)} className="chart-axis" />
         {ticks.map((t) => (
           <g key={t}>
@@ -57,14 +57,14 @@ function ProbabilityChart({ estimate, now }: { estimate: ReopeningEstimate; now:
         <path d={areaPath} className="chart-area" />
         <path d={linePath} className="chart-line" />
         {pts.map((p, i) => (
-          <g key={p.before} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}
+          <g key={p.time} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}
             onClick={() => setHover(hover === i ? null : i)}>
-            <circle cx={x(p.before)} cy={y(p.p)} r={14} fill="transparent" />
-            <circle cx={x(p.before)} cy={y(p.p)} r={hover === i ? 5.5 : 4} className="chart-dot" />
-            {(labelled.has(p.before) || hover === i) && (
-              <text x={x(p.before) + (p.before === official ? 7 : 0)} y={y(p.p) - 9}
-                textAnchor={i === pts.length - 1 ? "end" : p.before === official ? "start" : "middle"} className="chart-value">
-                {pct(p.p)}
+            <circle cx={x(p.time)} cy={y(p.probability_ended)} r={14} fill="transparent" />
+            <circle cx={x(p.time)} cy={y(p.probability_ended)} r={hover === i ? 5.5 : 4} className="chart-dot" />
+            {(labelled.has(p.time) || hover === i) && (
+              <text x={x(p.time) + (p.time === official ? 7 : 0)} y={y(p.probability_ended) - 9}
+                textAnchor={i === pts.length - 1 ? "end" : p.time === official ? "start" : "middle"} className="chart-value">
+                {pct(p.probability_ended)}
               </text>
             )}
           </g>
@@ -72,7 +72,7 @@ function ProbabilityChart({ estimate, now }: { estimate: ReopeningEstimate; now:
       </svg>
       <div className="chart-caption">
         {hover != null
-          ? <>{pct(pts[hover].p)} chance the line has reopened before {hhmm(pts[hover].before)}</>
+          ? <>{pct(pts[hover].probability_ended)} chance the line has reopened before {hhmm(pts[hover].time)}</>
           : <>Chance the line is open again, by time of day</>}
       </div>
     </div>
@@ -101,8 +101,8 @@ export default function HowLongCard({ status, now }: { status: DisruptionStatus;
       {atOfficial && atMargin && (
         <p>
           We looked at {e.similar_incidents_count} similar incidents. The line was open again
-          by {hhmm(atOfficial.before)} in <strong>{inTen(atOfficial.p)}</strong> cases,
-          and by {hhmm(atMargin.before)} in <strong>{inTen(atMargin.p)}</strong> cases.
+          by {hhmm(atOfficial.time)} in <strong>{inTen(atOfficial.probability_ended)}</strong> cases,
+          and by {hhmm(atMargin.time)} in <strong>{inTen(atMargin.probability_ended)}</strong> cases.
         </p>
       )}
       {e.margin_until && <p className="estimate-margin">To be safe, count on {hhmm(e.margin_until)}.</p>}

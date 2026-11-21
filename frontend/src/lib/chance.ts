@@ -1,7 +1,7 @@
 // Turn probabilities into words a tired traveller understands at a glance.
 // We never show a bare percentage on the main screens: a word, a colour and
 // "x in 10" (natural frequencies are easier to read than percentages).
-import type { Alternative, Certainty, ProbabilityPoint } from "../types";
+import type { Alternative, Certainty, EndProbability } from "../types";
 import { minutesBetween } from "./format";
 
 export type Tone = "good" | "ok" | "bad";
@@ -34,16 +34,16 @@ export const RELIABILITY: Record<Certainty, ChanceLabel> = {
 const BASE: Record<Certainty, number> = { safe: 0.95, likely: 0.85, uncertain: 0.6 };
 
 /** Chance the line has reopened before `t`, interpolated on the estimate curve. */
-export function reopenedBefore(points: ProbabilityPoint[], now: string, t: string): number {
-  const pts = [{ before: now, p: 0 }, ...points];
+export function reopenedBefore(points: EndProbability[], now: string, t: string): number {
+  const pts = [{ time: now, probability_ended: 0 }, ...points];
   const at = new Date(t).getTime();
   if (at <= new Date(now).getTime()) return 0;
   for (let i = 1; i < pts.length; i++) {
     const a = pts[i - 1], b = pts[i];
-    const ta = new Date(a.before).getTime(), tb = new Date(b.before).getTime();
-    if (at <= tb) return a.p + ((at - ta) / (tb - ta)) * (b.p - a.p);
+    const ta = new Date(a.time).getTime(), tb = new Date(b.time).getTime();
+    if (at <= tb) return a.probability_ended + ((at - ta) / (tb - ta)) * (b.probability_ended - a.probability_ended);
   }
-  return pts[pts.length - 1].p;
+  return pts[pts.length - 1].probability_ended;
 }
 
 /**
@@ -52,7 +52,7 @@ export function reopenedBefore(points: ProbabilityPoint[], now: string, t: strin
  * - Other routes depend on their own reliability, and must arrive in time.
  * MOCK logic: the backend (workstream A + B) should return `on_time_probability`.
  */
-export function onTimeChance(a: Alternative, deadline: string, curve: ProbabilityPoint[], now: string): number {
+export function onTimeChance(a: Alternative, deadline: string, curve: EndProbability[], now: string): number {
   const base = BASE[a.certainty ?? "uncertain"];
   if (a.uses_blocked_line) {
     const ride = a.legs.find((l) => l.mode !== "wait");
