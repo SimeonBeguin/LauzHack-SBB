@@ -1,0 +1,22 @@
+# Provided hackathon data: keep it local, do not push it
+Daten/
+
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Node
+node_modules/
+dist/
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/
