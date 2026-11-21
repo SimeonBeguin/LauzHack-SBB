@@ -6,6 +6,7 @@ and mirror every change in frontend/src/types.ts.
 
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -57,6 +58,10 @@ class ReopeningEstimate(BaseModel):
     wide_end_latest: datetime | None = None    # 90th percentile (80 % range)
     probabilities: list[EndProbability] = []   # a few checkpoints for the UI text
     method: str = ""                           # "official_corrected", "survival", "ended", "mock"
+    # --- added by Frontend (optional) ---
+    official_label: str | None = None          # how SBB phrases it: "around", "at least until", "until"
+    margin_until: datetime | None = None       # "to be safe, count on ..."
+    reliability: Literal["good", "fair", "low"] | None = None
 
 
 class DisruptionStatus(BaseModel):
@@ -67,6 +72,11 @@ class DisruptionStatus(BaseModel):
     affected_section: str | None = None
     estimate: ReopeningEstimate
     last_update: datetime
+    # --- added by Frontend (optional) ---
+    kind: Literal["interruption", "restriction", "resolved"] = "interruption"
+    started_at: datetime | None = None
+    journey: Journey | None = None
+    changes: list[str] = []  # what changed since the previous version
 
 
 class TimelinePoint(BaseModel):
@@ -143,6 +153,10 @@ class Preferences(BaseModel):
     avoid_replacement_bus: bool = True
     max_transfers: int | None = None
     accessible_only: bool = False
+    luggage: bool = False
+    stroller_bike: bool = False
+    few_transfers: bool = False
+    seat: bool = False
 
 
 class AlternativeCategory(str, Enum):
@@ -173,6 +187,19 @@ class Alternative(BaseModel):
     score: float = 0.0
     ticket_valid: bool | None = None
     ticket_hint: str | None = None
+    # --- added by Frontend (optional) ---
+    title: str | None = None  # "Go via Neuchâtel"
+    subtitle: str | None = None
+    departure: datetime | None = None
+    arrival_latest: datetime | None = None  # for ranges, e.g. the "wait" option
+    certainty: Literal["safe", "likely", "uncertain"] | None = None
+    certainty_reason: str | None = None
+    recommended: bool = False
+    disabled_reason: str | None = None  # conflicts with the user's answers
+    accessible: bool | None = None
+    uses_blocked_line: bool = False
+    warnings: list[str] = []
+    on_time_probability: float | None = Field(None, ge=0, le=1)  # chance to arrive by preferences.deadline
 
 
 class AlternativesRequest(BaseModel):
@@ -199,6 +226,10 @@ class CommuterTrip(BaseModel):
     departure_time: str  # "HH:MM", local time
     weekdays: list[int] = [0, 1, 2, 3, 4]  # Monday = 0
     push_token: str | None = None
+    origin_name: str | None = None
+    destination_name: str | None = None
+    line: str | None = None
+    arrival_time: str | None = None
 
 
 class Notification(BaseModel):
@@ -207,3 +238,6 @@ class Notification(BaseModel):
     body: str
     incident_id: str | None = None
     created_at: datetime
+    id: str | None = None
+    kind: Literal["earlier_train", "own_train", "resolved"] | None = None
+    probability: float | None = Field(None, ge=0, le=1)  # chance the own train is still hit

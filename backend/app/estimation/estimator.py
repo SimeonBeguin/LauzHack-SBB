@@ -212,6 +212,10 @@ def predict(state: IncidentState, known_before: pd.Timestamp | None = None) -> E
     if len(c) < 5:  # very long incident: relax the survival condition
         c = _candidates(max(bucket // 2, 0), kb)
         c = c[c["incident_id"] != state.incident_id] if state.incident_id else c
+    if len(c) < 5 and kb is not None:
+        # Honest replay of one of the very first incidents (e.g. March 2024):
+        # almost no history before it, so fall back to the whole history.
+        return predict(state, None)
 
     same_cause = (c["reason_id"] == state.reason_id).to_numpy()
     same_group = (c["reason_group"] == state.reason_group).to_numpy()

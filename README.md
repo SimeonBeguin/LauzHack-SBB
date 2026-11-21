@@ -41,6 +41,7 @@ parallel and connected later. Look for `TODO` and `MOCK` in the code.
 ```
 .
 ├── README.md
+├── .gitignore              # keeps Daten/, .env, node_modules, .venv out of git
 ├── .env.example            # copy to .env, add your API keys (never commit .env)
 ├── Daten/                  # provided hackathon data (git-ignored, share it locally)
 ├── docs/                   # mockup and data notes
@@ -116,9 +117,28 @@ pytest                      # smoke tests
 ```bash
 cd frontend
 npm install
-npm run dev                 # uses the backend
-VITE_USE_MOCKS=true npm run dev   # works without the backend
+npm run dev                        # replayed demo scenario (mock), no backend needed
+VITE_USE_MOCKS=false npm run dev   # calls the backend, falls back to the mock on error
 ```
+
+## Demo
+
+Open http://localhost:5173 on a laptop: the app shows inside a phone frame, with
+**presenter controls** next to it (press `D` to hide/show, `?clean` hides them at load).
+
+1. **Delay mode**: "Start from My trips" → *What should I do?*. The screen asks one
+   question ("When do you need to be in Bern?") and answers with one advice and
+   a plain-word chance to make it ("Very likely · 9 in 10"). Step through the real
+   incident of 25.09.2026 (fire Puidoux – Vauderens) with "Next SBB update":
+   16:52 interruption (~18:00) → 17:12 replacement buses → 17:46 SBB moves to
+   ~18:45 → 18:15 service resumed. Details and the chart sit behind "Why and how long?".
+2. **Commuter alerts** (separate): "Show lock screen", then send the 3 alerts
+   (earlier train stuck → own train likely cancelled → line reopened). Tap a
+   notification to open the alert. Tick "Also send real OS notifications" for a
+   real macOS/Windows notification (Chrome on localhost).
+
+All demo data lives in `frontend/src/mocks/scenario.ts`. To show it on a real
+phone on the same Wi-Fi: `npm run dev -- --host` and open the Network URL.
 
 ## API (current stubs)
 

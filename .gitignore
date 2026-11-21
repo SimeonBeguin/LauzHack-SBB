@@ -1,8 +1,11 @@
-# Provided hackathon data: keep it local, do not push it
+# Provided hackathon data: contains SBB internal data, never commit it
 Daten/
+/data/
 
 # Secrets
 .env
+.env.*
+!.env.example
 
 # Python
 __pycache__/
@@ -12,11 +15,13 @@ venv/
 .pytest_cache/
 .ipynb_checkpoints/
 
-# Node
+# Node / Vite
 node_modules/
 dist/
+*.local
 
 # OS / editors
 .DS_Store
-.vscode/
 .idea/
+.vscode/
+*.tsbuildinfo
