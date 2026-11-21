@@ -31,14 +31,22 @@ class RoadTime:
     minutes_with_traffic: float
     minutes_free_flow: float
     length_km: float
+    # Typical time at that hour from TomTom's historic speeds (None if not returned).
+    # Live - historic = congestion that is *unusual* today (used by app/prevention).
+    minutes_historic: float | None = None
+    live: bool = True  # True: current traffic; False: departAt in the future (historic / predictive)
 
     @property
     def delay_minutes(self) -> int:
         return max(0, round(self.minutes_with_traffic - self.minutes_free_flow))
 
 
-def road_time(from_stop: Stop, to_stop: Stop, depart_at: datetime | None = None) -> RoadTime | None:
-    """Car travel time between two stops (TomTom). None if no key / no coords / error."""
+def road_time(from_stop: Stop, to_stop: Stop, depart_at: datetime | None = None,
+              travel_mode: str = "bus") -> RoadTime | None:
+    """Car travel time between two stops (TomTom). None if no key / no coords / error.
+
+    `depart_at` in the future: TomTom uses historic / predictive speeds for that
+    moment. None or in the past: live traffic now."""
     if not settings.tomtom_api_key:
         return None
     if None in (from_stop.lat, from_stop.lon, to_stop.lat, to_stop.lon):
@@ -46,14 +54,14 @@ def road_time(from_stop: Stop, to_stop: Stop, depart_at: datetime | None = None)
     now = datetime.now(timezone.utc)
     # TomTom only accepts departAt in the future; otherwise use live traffic
     depart = depart_at if depart_at and depart_at > now else None
-    key = f"{from_stop.id}|{to_stop.id}|{depart.strftime('%Y-%m-%dT%H') if depart else 'now'}"
+    key = f"{from_stop.id}|{to_stop.id}|{travel_mode}|{depart.strftime('%Y-%m-%dT%H') if depart else 'now'}"
     cached = _cache.get(key)
     if cached is not None:
         return cached
     params = {
         "key": settings.tomtom_api_key,
         "traffic": "true",
-        "travelMode": "bus",
+        "travelMode": travel_mode,
         "computeTravelTimeFor": "all",
         "routeType": "fastest",
     }
@@ -69,7 +77,9 @@ def road_time(from_stop: Stop, to_stop: Stop, depart_at: datetime | None = None)
         return None
     traffic_s = summary.get("travelTimeInSeconds")
     free_s = summary.get("noTrafficTravelTimeInSeconds") or traffic_s
-    result = RoadTime(traffic_s / 60, free_s / 60, summary.get("lengthInMeters", 0) / 1000)
+    historic_s = summary.get("historicTrafficTravelTimeInSeconds")
+    result = RoadTime(traffic_s / 60, free_s / 60, summary.get("lengthInMeters", 0) / 1000,
+                      minutes_historic=historic_s / 60 if historic_s else None, live=depart is None)
     _cache.set(key, result)
     return result
 

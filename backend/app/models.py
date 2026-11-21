@@ -200,11 +200,14 @@ class Alternative(BaseModel):
     uses_blocked_line: bool = False
     warnings: list[str] = []
     on_time_probability: float | None = Field(None, ge=0, le=1)  # chance to arrive by preferences.deadline
+    # --- added by Prevention (optional, only when AlternativesRequest.include_reliability) ---
+    reliability: "TripReliability | None" = None
 
 
 class AlternativesRequest(BaseModel):
     journey_id: str
     preferences: Preferences = Preferences()
+    include_reliability: bool = False  # Prevention: fill Alternative.reliability (a few TomTom calls)
 
 
 class AlternativesResponse(BaseModel):
@@ -239,7 +242,10 @@ class Notification(BaseModel):
     incident_id: str | None = None
     created_at: datetime
     id: str | None = None
-    kind: Literal["earlier_train", "own_train", "resolved"] | None = None
+    kind: Literal[
+        "earlier_train", "own_train", "resolved",  # commuter alerts
+        "booked_train_disrupted", "connection_broken", "connection_at_risk", "booking_back_to_normal",  # booked trips
+    ] | None = None
     probability: float | None = Field(None, ge=0, le=1)  # chance the own train is still hit
 
 
@@ -311,3 +317,192 @@ class CommuterAlert(BaseModel):
     reasons: list[str] = []
     line: list[LineTrain] = []
     options: list[Alternative] = []
+
+
+# ---------------------------------------------------------------------------
+# Prevention (owner: Prevention). Warn before a delay happens.
+# See docs/prevention-frontend-handoff.md for how the app should show these.
+# ---------------------------------------------------------------------------
+
+ReliabilityLevel = Literal["good", "fair", "low"]  # UI words: Reliable / Probably fine / Uncertain
+
+
+class LegReliability(BaseModel):
+    """Idea 3: how much a leg usually suffers from road traffic at that hour."""
+
+    mode: str
+    line: str | None = None
+    from_stop: Stop
+    to_stop: Stop
+    departure: datetime
+    road_exposure: float = Field(ge=0, le=1)  # 1 = bus in mixed traffic, 0 = own track (train, metro)
+    typical_congestion_minutes: float = 0.0   # extra car minutes at that hour vs free flow (0 if no road)
+    expected_delay_minutes: float = 0.0       # mean delay we expect for this leg
+    level: ReliabilityLevel = "good"
+    reason: str = ""
+
+
+class TransferRisk(BaseModel):
+    """A change between two vehicles and the chance to miss it."""
+
+    at_stop: Stop
+    arrival: datetime            # incoming vehicle
+    departure: datetime          # outgoing vehicle
+    walk_minutes: float = 0.0
+    margin_minutes: float        # departure - arrival - walk
+    expected_incoming_delay_minutes: float = 0.0
+    probability_missed: float = Field(ge=0, le=1)
+    level: ReliabilityLevel = "good"
+
+
+class TripReliability(BaseModel):
+    """Idea 3: reliability gauge of one itinerary, from usual traffic at that hour.
+
+    Show `label` + `reason`, never the numbers (stressed traveller rule)."""
+
+    level: ReliabilityLevel
+    label: str                   # "Reliable", "Probably fine", "Uncertain"
+    reason: str                  # one short sentence, e.g. "Bus 912 is often slowed by traffic around 17:30"
+    expected_delay_minutes: float = 0.0          # mean delay at the destination
+    probability_late_5min: float = Field(0.0, ge=0, le=1)  # P(arrive more than 5 min after the planned time)
+    on_time_probability: float | None = Field(None, ge=0, le=1)  # P(arrive by the deadline), if one is given
+    effective_arrival: datetime | None = None    # planned arrival + safety margin, used to rank
+    road_share: float = Field(0.0, ge=0, le=1)   # share of the ride time spent on roads
+    legs: list[LegReliability] = []
+    transfers: list[TransferRisk] = []
+    source: Literal["tomtom_historic", "rush_hour_profile"] = "rush_hour_profile"
+
+
+class PlannedTrip(BaseModel):
+    """One itinerary of a normal search, with its reliability."""
+
+    id: str
+    legs: list[Leg]
+    departure: datetime
+    arrival: datetime
+    transfers: int = 0
+    reliability: TripReliability
+    recommended: bool = False
+    note: str | None = None      # e.g. "6 min longer, but avoids buses at rush hour"
+
+
+class ReliablePlanRequest(BaseModel):
+    origin_stop_id: str
+    destination_stop_id: str
+    departure: datetime
+    deadline: datetime | None = None
+    num_results: int = Field(5, ge=1, le=8)
+
+
+class ReliablePlanResponse(BaseModel):
+    """Trips ranked by reliability (safest first when there is a deadline)."""
+
+    trips: list[PlannedTrip]
+    ranking: str                 # how the list is sorted, for the UI subtitle
+
+
+class StopForecast(BaseModel):
+    stop: Stop
+    planned_arrival: datetime
+    official_delay_minutes: int = 0   # what SBB / the operator shows now (OJP real-time)
+    predicted_delay_minutes: int = 0  # our forecast from the traffic ahead
+
+
+class SegmentForecast(BaseModel):
+    """Road between two stops of the bus, with the traffic right now."""
+
+    from_stop: Stop
+    to_stop: Stop
+    reached_at: datetime              # when the bus should get there (planned + current delay)
+    live_minutes: float | None = None
+    typical_minutes: float | None = None
+    free_flow_minutes: float | None = None
+    added_delay_minutes: float = 0.0  # extra delay this segment adds (after the horizon weight)
+    jam: bool = False
+
+
+class BusDelayForecast(BaseModel):
+    """Idea 4: future delay of a bus, from the traffic it will drive through.
+
+    `extra_minutes` > 0 means we see a delay the official real-time data does
+    not show yet."""
+
+    line: str | None = None
+    from_stop: Stop
+    to_stop: Stop
+    planned_departure: datetime
+    planned_arrival: datetime
+    as_of: datetime
+    current_delay_minutes: int = 0     # delay reported now
+    official_delay_minutes: int = 0    # delay shown now at to_stop
+    predicted_delay_minutes: int = 0   # our forecast at to_stop
+    extra_minutes: int = 0             # predicted - official
+    stops: list[StopForecast] = []
+    segments: list[SegmentForecast] = []
+    confidence: Literal["high", "medium", "low"] = "low"
+    source: Literal["tomtom_live", "simulated", "too_early", "unavailable"] = "unavailable"
+    explanation: str = ""
+
+
+class BusDelayResponse(BaseModel):
+    trip_departure: datetime | None = None
+    trip_arrival: datetime | None = None
+    forecasts: list[BusDelayForecast] = []  # one per bus leg of the trip
+
+
+class BookedTrip(BaseModel):
+    """Idea 2: a trip the traveller already paid for (e.g. a Supersaver ticket)."""
+
+    id: str | None = None
+    user_id: str
+    origin_stop_id: str
+    destination_stop_id: str
+    departure: datetime          # booked departure (the app finds the matching connection)
+    origin_name: str | None = None
+    destination_name: str | None = None
+    ticket_kind: Literal["supersaver", "point_to_point", "travelcard"] = "supersaver"
+    # filled by the backend at booking time (the connection that was bought)
+    legs: list[Leg] = []
+    arrival: datetime | None = None
+    push_token: str | None = None
+
+
+class ConnectionCheck(BaseModel):
+    """One change of the booked trip, checked with real-time data and forecasts."""
+
+    at_stop: Stop
+    arrival: datetime            # incoming vehicle, best estimate (real-time + our bus forecast)
+    departure: datetime          # outgoing vehicle, real-time
+    margin_minutes: float
+    probability_missed: float = Field(ge=0, le=1)
+    status: Literal["ok", "at_risk", "broken"]
+    cause: str = ""              # e.g. "Bus 912 will probably arrive 7 min late (traffic ahead)"
+
+
+class BookingAlert(BaseModel):
+    """What the booked-trip alert screen shows, computed when it was sent."""
+
+    notification: Notification
+    booking: BookedTrip
+    headline: str
+    reasons: list[str] = []
+    connections: list[ConnectionCheck] = []
+    bus_forecasts: list[BusDelayForecast] = []
+    options: list[Alternative] = []  # other ways to get there, best first
+    ticket_note: str | None = None
+
+
+class BookingStatus(BaseModel):
+    """Current check of a booked trip (also when nothing is wrong)."""
+
+    booking: BookedTrip
+    as_of: datetime
+    state: Literal["ok", "at_risk", "broken", "disrupted", "not_watched"]
+    summary: str
+    connections: list[ConnectionCheck] = []
+    bus_forecasts: list[BusDelayForecast] = []
+    reliability: TripReliability | None = None
+
+
+Alternative.model_rebuild()
+AlternativesResponse.model_rebuild()

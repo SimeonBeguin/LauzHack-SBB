@@ -27,8 +27,10 @@ def change_situation(journey_id: str, action: SituationAction) -> Situation:
         sit = situation.apply(journey_id, action)
         if action.action == "reset":
             from app.notifications import watcher
+            from app.prevention import bookings
 
             watcher.reset()
+            bookings.reset_alerts()
         return sit
     except KeyError:
         raise HTTPException(404, f"No incident on journey {journey_id}")

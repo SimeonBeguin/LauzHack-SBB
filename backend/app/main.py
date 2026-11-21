@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import alternatives, disruptions, notifications, situation
+from app.api import alternatives, disruptions, notifications, prevention, situation
 
 app = FastAPI(title="SBB Disruption Helper", version="0.1.0")
 
@@ -18,6 +18,7 @@ app.include_router(disruptions.router)
 app.include_router(alternatives.router)
 app.include_router(notifications.router)
 app.include_router(situation.router)
+app.include_router(prevention.router)
 
 
 @app.get("/health")

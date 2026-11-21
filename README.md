@@ -69,6 +69,10 @@ from the live situation of the demo journey (see "Demo" below).
 │       │   ├── ranking.py        #     build + rank the 4 categories
 │       │   ├── ticket_validity.py#     ticket hint
 │       │   └── road_traffic.py   #     optional TomTom / HERE
+│       ├── prevention/           # warn before a delay (docs/prevention-frontend-handoff.md)
+│       │   ├── reliability.py    #     reliability gauge from usual traffic (rush hours)
+│       │   ├── bus_delay.py      #     future bus delay from live traffic (TomTom)
+│       │   └── bookings.py       #     booked trips: connection at risk alerts
 │       └── notifications/        # [C] commuter alerts
 │           ├── subscriptions.py  #     registered trips (in memory)
 │           └── watcher.py        #     match incidents to trips, earlier-train alert
@@ -170,6 +174,11 @@ phone on the same Wi-Fi: `npm run dev -- --host` and open the Network URL.
 | GET | `/situation/{journey_id}` | `Situation` (clock, SBB end, replacement buses, reopening, updates) |
 | POST | `/situation/{journey_id}` | `SituationAction` (advance, set_official_end, replacement_bus, resume, next_update, reset) |
 | GET | `/journeys/{journey_id}/details` | `IncidentDetails` (internal KULT info) |
+| POST | `/prevention/plan` | body `ReliablePlanRequest` → trips ranked by reliability (usual traffic at that hour) |
+| GET | `/prevention/bus-delay?origin_stop_id=&destination_stop_id=&departure=` | `BusDelayResponse`: future bus delay from live traffic (TomTom) |
+| POST / GET / DELETE | `/prevention/bookings` | trips paid in advance (`BookedTrip`) |
+| GET | `/prevention/bookings/{booking_id}/status` | `BookingStatus` (connections, bus forecasts, reliability) |
+| GET | `/prevention/{user_id}/booking-alerts` | `BookingAlert[]` (connection at risk / broken, disruption) |
 | GET | `/stops?q=` | rail stations by name (SBB service points) |
 
 Journey ids: `demo-zh` (default) and `demo-1`.

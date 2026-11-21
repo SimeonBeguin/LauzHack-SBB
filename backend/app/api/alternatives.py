@@ -13,6 +13,13 @@ router = APIRouter(prefix="/alternatives", tags=["alternatives"])
 @router.post("", response_model=AlternativesResponse)
 def alternatives(req: AlternativesRequest) -> AlternativesResponse:
     try:
-        return find_alternatives(get_journey(req.journey_id), req.preferences)
+        res = find_alternatives(get_journey(req.journey_id), req.preferences)
     except OJPError as exc:
         raise HTTPException(503, f"Timetable (OJP) unavailable: {exc}")
+    if req.include_reliability:  # Prevention, idea 3 (opt-in: a few TomTom calls per option)
+        from app.prevention import reliability
+
+        for alts in res.by_category.values():
+            for alt in alts:
+                alt.reliability = reliability.assess(alt.legs, deadline=req.preferences.deadline)
+    return res
