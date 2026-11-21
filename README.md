@@ -23,6 +23,7 @@ is disrupted, the app tells you honestly what is going on and what you can do.
 
 UI mockup: [`docs/mode-perturbation-v1.png`](docs/mode-perturbation-v1.png).
 Data notes (French): [`docs/data-analysis-fr.md`](docs/data-analysis-fr.md).
+Full team discussion summary, to give your AI assistant as context: [`docs/PROJECT_CONTEXT.md`](docs/PROJECT_CONTEXT.md).
 
 ## Stack
 
