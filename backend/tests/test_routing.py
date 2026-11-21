@@ -9,7 +9,8 @@ from fastapi.testclient import TestClient
 from app.config import settings
 from app.main import app
 from app.mock_data import get_journey
-from app.models import Alternative, AlternativeCategory, Preferences, Stop
+from app import situation
+from app.models import Alternative, AlternativeCategory, Preferences, SituationAction, Stop
 from app.routing.disruption import BlockedSection, parse_section_text, trip_uses_section
 from app.routing.ojp_client import TZ, OJPCall, OJPClient, OJPLeg, OJPTrip, Recorder, didok, sloid
 from app.routing.ranking import find_alternatives
@@ -19,7 +20,9 @@ from app.routing.ticket_validity import check_ticket
 @pytest.fixture
 def replay(monkeypatch):
     monkeypatch.setattr(settings, "ojp_mode", "replay")
-    return OJPClient(mode="replay")
+    situation.apply("demo-zh", SituationAction(action="reset"))
+    yield OJPClient(mode="replay")
+    situation.apply("demo-zh", SituationAction(action="reset"))
 
 
 def _t(hh, mm):
@@ -53,6 +56,7 @@ def test_section_blocking():
 def test_parse_section_text():
     assert parse_section_text("Interruption Uster - Wetzikon ZH") == ("Uster", "Wetzikon ZH")
     assert parse_section_text("Palézieux - Romont") == ("Palézieux", "Romont")
+    assert parse_section_text("Puidoux - Vauderens and Lucens") == ("Puidoux", "Vauderens")
 
 
 def test_recorder_shifts_dates(tmp_path):
@@ -75,6 +79,7 @@ def test_ticket_hint():
 
 def test_demo_zh_alternatives_avoid_blocked_section(replay):
     journey = get_journey("demo-zh")
+    situation.apply("demo-zh", SituationAction(action="replacement_bus", value=True))
     res = find_alternatives(journey, Preferences(avoid_replacement_bus=False), replay)
     cats = res.by_category
     assert set(cats) == set(AlternativeCategory)
@@ -94,16 +99,50 @@ def test_demo_zh_alternatives_avoid_blocked_section(replay):
     assert scores == sorted(scores, reverse=True) and scores[0] == 100
 
 
-def test_preferences_filter_replacement_bus_and_transfers(replay):
+def test_no_replacement_bus_unless_running(replay):
     journey = get_journey("demo-zh")
+    res = find_alternatives(journey, Preferences(avoid_replacement_bus=False), replay)
+    assert all(leg.mode != "replacement_bus" for alts in res.by_category.values() for a in alts for leg in a.legs)
+
+
+def test_preferences_mark_replacement_bus_and_transfers(replay):
+    journey = get_journey("demo-zh")
+    situation.apply("demo-zh", SituationAction(action="replacement_bus", value=True))
     res = find_alternatives(journey, Preferences(avoid_replacement_bus=True, max_transfers=1), replay)
     fastest = res.by_category[AlternativeCategory.FASTEST]
-    assert fastest
-    assert all(leg.mode != "replacement_bus" for a in fastest for leg in a.legs)
-    assert all(a.transfers <= 1 for a in fastest)
+    assert fastest and not fastest[0].disabled_reason
+    bus = [a for a in fastest if any(leg.mode == "replacement_bus" for leg in a.legs)]
+    assert bus, "the running replacement bus stays visible"
+    assert all(a.disabled_reason for a in bus)
+    assert all(a.transfers <= 1 or a.disabled_reason for a in fastest)
+
+
+def test_resumed_line_gives_normal_trips(replay):
+    journey = get_journey("demo-zh")
+    situation.apply("demo-zh", SituationAction(action="resume"))
+    res = find_alternatives(journey, Preferences(), replay)
+    assert not res.by_category[AlternativeCategory.WAIT]
+    lines = {leg.line for a in res.by_category[AlternativeCategory.FASTEST] for leg in a.legs}
+    assert "S14" in lines
 
 
 def test_endpoint_demo_zh(replay):
     r = TestClient(app).post("/alternatives", json={"journey_id": "demo-zh"})
     assert r.status_code == 200
     assert r.json()["by_category"]["fastest"]
+
+
+def test_commuter_alert_from_situation(replay):
+    from app.models import CommuterTrip
+    from app.notifications import subscriptions, watcher
+
+    watcher.reset()
+    trip = subscriptions.add_trip(CommuterTrip(user_id="t", origin_stop_id="8503000",
+                                               destination_stop_id="8503130", departure_time="18:12"))
+    alerts = watcher.alerts_for("t")
+    assert alerts and alerts[-1].notification.kind == "own_train"
+    assert any(t.yours for t in alerts[-1].line) and alerts[-1].options
+    situation.apply("demo-zh", SituationAction(action="resume"))
+    assert watcher.alerts_for("t")[-1].notification.kind == "resolved"
+    subscriptions.remove_trip(trip.id)
+    watcher.reset()

@@ -288,6 +288,38 @@ class Recorder:
 
 
 # ---------------------------------------------------------------------------
+# Past days: shift a request to the same weekday in the future (local time)
+# ---------------------------------------------------------------------------
+
+_UTC_TS_RE = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?Z")
+_DAY_REF_RE = re.compile(r"(?<=<OperatingDayRef>)\d{4}-\d{2}-\d{2}")
+
+
+def _future_shift_days(xml_body: str) -> int:
+    """Whole weeks (in days) to move a request for a past day to today or later."""
+    m = re.search(r"<DepArrTime>(\d{4}-\d{2}-\d{2})", xml_body)
+    if not m:
+        return 0
+    req = date.fromisoformat(m.group(1))
+    today = datetime.now(TZ).date()
+    if req >= today:
+        return 0
+    return -(-(today - req).days // 7) * 7
+
+
+def _shift_local_times(text: str, days: int) -> str:
+    """Move every UTC timestamp by `days` in Swiss local time (keeps 17:20 at 17:20
+    across summer / winter time) and every operating day by `days`."""
+    def ts(m: re.Match) -> str:
+        t = datetime.fromisoformat(m.group(1)).replace(tzinfo=timezone.utc).astimezone(TZ)
+        local = t.replace(tzinfo=None) + timedelta(days=days)
+        return local.replace(tzinfo=TZ).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S") + (m.group(2) or "") + "Z"
+
+    text = _UTC_TS_RE.sub(ts, text)
+    return _DAY_REF_RE.sub(lambda m: (date.fromisoformat(m.group(0)) + timedelta(days=days)).isoformat(), text)
+
+
+# ---------------------------------------------------------------------------
 # XML helpers
 # ---------------------------------------------------------------------------
 
@@ -592,10 +624,14 @@ class OJPClient:
                 raise OJPError(f"No OJP recording for request ({label}); run once with OJP_MODE=record")
         if not self.api_key:
             raise OJPError("OJP_API_KEY is not set (see .env.example)")
+        # OJP has no timetable for past days (replayed incidents): ask for the
+        # same weekday in the coming weeks and move the answer back.
+        shift_days = _future_shift_days(xml_body)
+        sent_body = _shift_local_times(xml_body, shift_days) if shift_days else xml_body
         try:
             resp = httpx.post(
                 self.endpoint,
-                content=xml_body.encode("utf-8"),
+                content=sent_body.encode("utf-8"),
                 headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/xml"},
                 timeout=25,
             )
@@ -603,9 +639,10 @@ class OJPClient:
         except httpx.HTTPError as exc:  # never log the request headers (API key)
             raise OJPError(f"OJP request failed: {type(exc).__name__}") from None
         self.request_count += 1
+        text = _shift_local_times(resp.text, -shift_days) if shift_days else resp.text
         if self.mode in ("record", "auto"):
-            self.recorder.save(xml_body, resp.text, label)
-        return resp.text
+            self.recorder.save(xml_body, text, label)
+        return text
 
     # -- requests ----------------------------------------------------------
 

@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { StoreProvider, useStore } from "./store";
 import { hhmm } from "./lib/format";
-import { COMMUTER_ALERTS } from "./mocks/scenario";
 import Home from "./screens/Home";
 import DisruptionMode from "./screens/DisruptionMode";
 import CategoryList from "./screens/CategoryList";
@@ -25,7 +24,7 @@ function Screen() {
     case "details": return <IncidentDetails />;
     case "commuterSetup": return <CommuterSetup />;
     case "lock": return <LockScreen />;
-    case "commuterAlert": return <CommuterAlert index={route.index} />;
+    case "commuterAlert": return <CommuterAlert id={route.id} />;
     case "connection": return <ConnectionDetail id={route.id} />;
   }
 }
@@ -76,7 +75,8 @@ function TabBar() {
 }
 
 function Phone() {
-  const { route, toast, banner, dismissBanner, push, sheetOpen } = useStore();
+  const { route, toast, banner, dismissBanner, push, sheetOpen, alerts, clock } = useStore();
+  const bannerAlert = banner ? alerts.find((a) => a.notification.id === banner) : undefined;
   const isLock = route.name === "lock";
 
   return (
@@ -88,10 +88,10 @@ function Phone() {
         </div>
         {!isLock && <TabBar />}
         <PersonaliseSheet />
-        {banner != null && (
+        {bannerAlert && (
           <div className="banner-layer">
-            <NotificationCard index={banner} now={COMMUTER_ALERTS[banner].clock}
-              onOpen={() => { dismissBanner(); push({ name: "commuterAlert", index: banner }); }} />
+            <NotificationCard alert={bannerAlert} now={clock}
+              onOpen={() => { dismissBanner(); push({ name: "commuterAlert", id: banner! }); }} />
           </div>
         )}
         {toast && <div className="toast" role="status">{toast}</div>}
@@ -117,8 +117,7 @@ function Shell() {
   // Opened from an OS notification while the app was closed: /?alert=n1
   useEffect(() => {
     const id = new URLSearchParams(location.search).get("alert");
-    const i = COMMUTER_ALERTS.findIndex((a) => a.notification.id === id);
-    if (i >= 0) push({ name: "commuterAlert", index: i });
+    if (id) push({ name: "commuterAlert", id });
   }, [push]);
 
   // Clicking a real OS notification brings the app forward and opens the alert.
@@ -126,8 +125,7 @@ function Shell() {
     if (!("serviceWorker" in navigator)) return;
     const onMsg = (e: MessageEvent) => {
       if (e.data?.type !== "open-alert") return;
-      const i = COMMUTER_ALERTS.findIndex((a) => a.notification.id === e.data.id);
-      if (i >= 0) push({ name: "commuterAlert", index: i });
+      if (e.data.id) push({ name: "commuterAlert", id: e.data.id });
     };
     navigator.serviceWorker.addEventListener("message", onMsg);
     return () => navigator.serviceWorker.removeEventListener("message", onMsg);

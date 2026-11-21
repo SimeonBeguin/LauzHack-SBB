@@ -1,4 +1,4 @@
-"""Hardcoded demo journey so all three workstreams can run before real data is wired in."""
+"""The demo journeys. Their incident lives in app/situation.py."""
 
 from datetime import datetime, timedelta
 
@@ -6,9 +6,8 @@ from app.models import Journey, Stop
 
 _now = datetime.now().astimezone().replace(second=0, microsecond=0)
 
-# Real incident replayed in delay mode (same as frontend/src/mocks/scenario.ts and
-# the estimation tests): fire Puidoux - Vauderens, 25.09.2026. The journey is the
-# frontend's demo journey on that day, so replayed times and journey times match.
+# Real incident replayed on demo-1 (same as the estimation tests): fire
+# Puidoux - Vauderens, 25.09.2026, with the journey on that day.
 DEMO_INCIDENT_ID = "2195005195853"
 
 DEMO_JOURNEY = Journey(

@@ -53,6 +53,8 @@ class DisruptionContext:
     section: BlockedSection
     start: datetime
     estimate: ReopeningEstimate
+    now: datetime | None = None  # current moment of the situation: no trip can leave before it
+    replacement_bus: bool = False  # SBB runs replacement buses over the section
 
     @property
     def reopening_official(self) -> datetime:
@@ -93,6 +95,24 @@ def section_calls(leg: OJPLeg, section: BlockedSection) -> list[OJPCall]:
     a, b = _coords(section.from_stop), _coords(section.to_stop)
     if not a or not b:
         return calls
+    # Trains that stop only at an intermediate station of the section (e.g. an IR
+    # stopping at Palézieux inside Puidoux - Vauderens) and run on towards the
+    # other end: blocked if they come from one side and leave on the other.
+    for k in range(1, len(leg.calls) - 1):
+        if leg.calls[k].stop_id not in section.intermediate_ids:
+            continue
+        prev, nxt = leg.calls[k - 1], leg.calls[k + 1]
+        p, n = _coords_id(prev.stop_id), _coords_id(nxt.stop_id)
+        if not p or not n:
+            continue
+        p_near_a = haversine_km(*p, *a) < haversine_km(*p, *b)
+        n_near_a = haversine_km(*n, *a) < haversine_km(*n, *b)
+        if p_near_a != n_near_a:
+            first, second = (section.from_stop, section.to_stop) if p_near_a else (section.to_stop, section.from_stop)
+            return [
+                OJPCall(first.id, first.name, dep_planned=prev.dep_planned, dep_estimated=prev.dep_estimated),
+                OJPCall(second.id, second.name, arr_planned=nxt.arr_planned, arr_estimated=nxt.arr_estimated),
+            ]
     ab = haversine_km(*a, *b)
     for prev, nxt in zip(leg.calls, leg.calls[1:]):
         p, n = _coords_id(prev.stop_id), _coords_id(nxt.stop_id)
@@ -231,7 +251,10 @@ def parse_section_text(text: str | None) -> tuple[str, str] | None:
         return None
     text = re.sub(r"^(Interruption|Restriction|Unterbruch|Einschränkung)\s*:?\s*", "", text.strip(), flags=re.I)
     m = _SECTION_RE.match(text)
-    return (m.group(1), m.group(2)) if m else None
+    if not m:
+        return None
+    # "Puidoux - Vauderens and Lucens": the section ends at the first named station
+    return m.group(1), re.split(r"\s+(?:and|und|et)\s+", m.group(2))[0]
 
 
 # ---------------------------------------------------------------------------
@@ -261,14 +284,6 @@ class DemoScenario:
     def now(self, journey: Journey) -> datetime:
         return journey.departure - self.checked_before_departure
 
-    def estimate(self, journey: Journey, at: datetime | None = None) -> ReopeningEstimate:
-        """Estimate from workstream A for this fictitious live incident (shared by
-        the status endpoint and the routing, so both show the same times)."""
-        from app.estimation.estimator import estimate_live
-
-        return estimate_live(self.reason_id, self.start(journey), official_end=self.official_end(journey),
-                             at=at or self.now(journey))
-
 
 DEMO_SCENARIOS: dict[str, DemoScenario] = {
     # Weekday ~17:30 return commute Zürich HB -> Hinwil, S14 interrupted Uster - Wetzikon ZH
@@ -283,31 +298,42 @@ DEMO_SCENARIOS: dict[str, DemoScenario] = {
 }
 
 
-def get_disruption(journey: Journey, client: OJPClient | None = None) -> DisruptionContext | None:
-    """Disruption affecting this journey, or None if we cannot find one."""
+def section_of(sit, client: OJPClient | None = None) -> BlockedSection | None:
+    """Blocked section of a situation (stop ids, intermediate stops, detour hubs)."""
     client = client or OJPClient()
-    scenario = DEMO_SCENARIOS.get(journey.id)
+    scenario = DEMO_SCENARIOS.get(sit.journey_id)
     if scenario:
-        section = build_section(client, scenario.section_from, scenario.section_to, journey.departure,
-                                scenario.detour_via_ids)
-        if section is None:
-            return None
-        return DisruptionContext(scenario.incident_id, section, scenario.start(journey), scenario.estimate(journey))
+        return build_section(client, scenario.section_from, scenario.section_to, sit.clock,
+                             scenario.detour_via_ids)
+    names = parse_section_text(sit.section)
+    return build_section(client, names[0], names[1], sit.clock) if names else None
 
-    # Generic path: read the affected section from workstream A's status endpoint.
-    try:
-        from app.api.disruptions import journey_status
 
-        # Call with explicit values: the defaults of the endpoint are FastAPI Query objects.
-        status = journey_status(journey.id, at=None, minutes_since_start=None, live=False)
-    except Exception as exc:  # status not available for this journey
-        log.warning("No disruption status for %s: %s", journey.id, exc)
+def section_entry_time(trip: OJPTrip, section: BlockedSection) -> datetime | None:
+    """When the trip enters the section (None if it does not use it)."""
+    for leg in trip.legs:
+        calls = section_calls(leg, section)
+        if len(calls) >= 2:
+            return calls[0].time
+    return None
+
+
+def get_disruption(journey: Journey, client: OJPClient | None = None, sit=None) -> DisruptionContext | None:
+    """Disruption affecting this journey, from the live situation (app/situation.py).
+
+    `sit` defaults to the situation of the journey itself; commuter checks pass
+    the situation of the demo incident for their own trip. None if the line has
+    reopened or the section cannot be resolved.
+    """
+    from app import situation as situations
+    from app.api.disruptions import situation_estimate
+
+    client = client or OJPClient()
+    sit = sit or situations.get(journey.id)
+    if sit is None or sit.resumed:
         return None
-    names = parse_section_text(status.affected_section) or parse_section_text(status.title)
-    if not names:
-        return None
-    section = build_section(client, names[0], names[1], journey.departure)
+    section = section_of(sit, client)
     if section is None:
         return None
-    start = status.started_at or min(status.last_update, journey.departure) - timedelta(minutes=30)
-    return DisruptionContext(status.incident_id, section, start, status.estimate)
+    return DisruptionContext(sit.incident_id, section, sit.start, situation_estimate(sit),
+                             now=sit.clock, replacement_bus=sit.replacement_bus)

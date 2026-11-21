@@ -1,8 +1,7 @@
 // "My trips": entry point. Today's disrupted journey (-> Need help) and the
 // registered regular trips (-> commuter alerts).
 import { useStore } from "../store";
-import { COMMUTER_ALERTS } from "../mocks/scenario";
-import { durationLabel, hhmm, minutesBetween } from "../lib/format";
+import { dayLabel, durationLabel, hhmm, minutesBetween } from "../lib/format";
 import { Header, Icon, LineBadge, PillRow, SectionTitle } from "../components/ui";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -20,7 +19,7 @@ function hm(t: string) {
 }
 
 export default function Home() {
-  const { status, push, trips, delivered } = useStore();
+  const { status, push, trips, alerts, error } = useStore();
   const j = status?.journey;
   const resolved = status?.kind === "resolved";
 
@@ -28,6 +27,7 @@ export default function Home() {
     <>
       <Header title="My trips" />
       <div className="content overlap">
+        {error && <p className="card error-card">{error}</p>}
         {j && status && (
           <section className="card summary">
             <h2 className="summary-title">{j.origin.name} <span className="arrow">→</span> {j.destination.name}</h2>
@@ -37,7 +37,7 @@ export default function Home() {
               <span className="tl-track" aria-hidden="true" />
               <strong>{hhmm(j.arrival)}</strong>
             </div>
-            <p className="summary-sub">Today, {durationLabel(minutesBetween(j.departure, j.arrival))} · Pl. 7</p>
+            <p className="summary-sub">{dayLabel(j.departure)}, {durationLabel(minutesBetween(j.departure, j.arrival))}</p>
             {resolved ? (
               <div className="trip-alert ok"><Icon name="check" size={20} /><span>Trains are running again</span></div>
             ) : (
@@ -69,13 +69,13 @@ export default function Home() {
           <PillRow icon="plus" onClick={() => push({ name: "commuterSetup" })}>Add a regular trip</PillRow>
         </div>
 
-        {delivered > 0 && (
+        {alerts.length > 0 && (
           <>
             <SectionTitle>Messages</SectionTitle>
             <div className="pill-stack">
-              {COMMUTER_ALERTS.slice(0, delivered).reverse().map((a, ri) => (
+              {[...alerts].reverse().map((a) => (
                 <PillRow key={a.notification.id} icon="bell" lead={<span className="pill-min">{hhmm(a.notification.created_at)}</span>}
-                  onClick={() => push({ name: "commuterAlert", index: delivered - 1 - ri })}>
+                  onClick={() => push({ name: "commuterAlert", id: a.notification.id ?? "" })}>
                   {a.notification.title}
                 </PillRow>
               ))}

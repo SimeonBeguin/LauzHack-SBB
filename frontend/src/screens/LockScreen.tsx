@@ -1,11 +1,11 @@
-// Simulated phone lock screen for the commuter alert demo.
+// Simulated phone lock screen: the commuter alerts sent by the backend.
 import { useStore } from "../store";
-import { COMMUTER_ALERTS } from "../mocks/scenario";
+import type { CommuterAlert } from "../types";
 import { dayLabel, hhmm } from "../lib/format";
 import { Icon } from "../components/ui";
 
-export function NotificationCard({ index, onOpen, now }: { index: number; onOpen: () => void; now?: string }) {
-  const n = COMMUTER_ALERTS[index].notification;
+export function NotificationCard({ alert, onOpen, now }: { alert: CommuterAlert; onOpen: () => void; now?: string }) {
+  const n = alert.notification;
   const isNow = now && n.created_at === now;
   return (
     <button className={`notif notif-${n.kind}`} onClick={onOpen}>
@@ -23,8 +23,8 @@ export function NotificationCard({ index, onOpen, now }: { index: number; onOpen
 }
 
 export default function LockScreen() {
-  const { clock, delivered, push } = useStore();
-  const items = Array.from({ length: delivered }, (_, i) => delivered - 1 - i);
+  const { clock, alerts, push } = useStore();
+  const items = [...alerts].reverse();
 
   return (
     <div className="lock">
@@ -34,11 +34,12 @@ export default function LockScreen() {
         <div className="lock-time">{hhmm(clock)}</div>
       </div>
       <div className="lock-stack">
-        {items.map((i) => (
-          <NotificationCard key={i} index={i} now={clock} onOpen={() => push({ name: "commuterAlert", index: i })} />
+        {items.map((a) => (
+          <NotificationCard key={a.notification.id} alert={a} now={clock}
+            onOpen={() => push({ name: "commuterAlert", id: a.notification.id ?? "" })} />
         ))}
       </div>
-      <div className="lock-hint">{delivered ? "Tap a notification to open it" : "No notifications"}</div>
+      <div className="lock-hint">{items.length ? "Tap a notification to open it" : "No notifications"}</div>
     </div>
   );
 }

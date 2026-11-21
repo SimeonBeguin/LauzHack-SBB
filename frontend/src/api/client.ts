@@ -1,113 +1,48 @@
-// Thin wrapper around the backend.
-// Mocks are ON by default (the replayed demo scenario). Set VITE_USE_MOCKS=false
-// to call the backend. If a backend call fails, we fall back to the mock so the
-// demo never breaks.
+// Thin wrapper around the backend. Everything the app shows comes from here:
+// there is no mock data. VITE_JOURNEY_ID picks the demo journey: "demo-zh"
+// (Zürich HB -> Hinwil, simulated incident, default) or "demo-1" (Lausanne ->
+// Bern, real incident of 25.09.2026 replayed from the data).
 import type {
-  AlternativesResponse, CommuterTrip, DepartureRisk, DisruptionStatus, IncidentDetails, IncidentTimeline,
-  Notification, Preferences,
+  AlternativesResponse, CommuterAlert, CommuterTrip, DisruptionStatus, IncidentDetails, Preferences,
+  Situation, SituationAction, Stop,
 } from "../types";
-import { DELAY_DETAILS, DELAY_JOURNEY, DELAY_STEPS } from "../mocks/scenario";
-import { applyPreferences } from "../mocks/applyPreferences";
-import { minutesBetween } from "../lib/format";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
-export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS !== "false";
-// Journey shown in delay mode. With the backend: "demo-zh" (Zürich HB -> Hinwil,
-// interruption Uster - Wetzikon ZH, OJP alternatives) by default, or "demo-1"
-// (Lausanne -> Bern, real incident of 25.09.2026, same as the mocks).
-export const JOURNEY_ID: string = USE_MOCKS
-  ? DELAY_JOURNEY.id
-  : (import.meta.env.VITE_JOURNEY_ID ?? "demo-zh");
+export const JOURNEY_ID: string = import.meta.env.VITE_JOURNEY_ID ?? "demo-zh";
+export const USER_ID = "demo-user";
+
+export class ApiError extends Error {}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
-  if (!res.ok) throw new Error(`${res.status} ${path}`);
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, { headers: { "Content-Type": "application/json" }, ...init });
+  } catch {
+    throw new ApiError(`The server is not reachable (${API_URL}). Is the backend running?`);
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new ApiError(body?.detail ?? `${res.status} ${path}`);
+  }
   return res.json() as Promise<T>;
 }
 
-async function withFallback<T>(live: () => Promise<T>, mock: () => T): Promise<T> {
-  if (USE_MOCKS) return mock();
-  try {
-    return await live();
-  } catch (e) {
-    console.warn("Backend call failed, using mock data:", e);
-    return mock();
-  }
-}
+const post = <T>(path: string, body: unknown) => request<T>(path, { method: "POST", body: JSON.stringify(body) });
 
-// Replay moment of the demo incident: minutes after its start (default 45 on the backend).
-export interface ReplayOptions { minutesSinceStart?: number; at?: string; live?: boolean }
+// Live situation (presenter controls). Every other call reflects it.
+export const getSituation = (journeyId = JOURNEY_ID) => request<Situation>(`/situation/${journeyId}`);
+export const changeSituation = (action: SituationAction, journeyId = JOURNEY_ID) =>
+  post<Situation>(`/situation/${journeyId}`, action);
 
-function replayQuery(opts?: ReplayOptions, extra: Record<string, string> = {}): string {
-  const p = new URLSearchParams(extra);
-  if (opts?.minutesSinceStart !== undefined) p.set("minutes_since_start", String(opts.minutesSinceStart));
-  if (opts?.at) p.set("at", opts.at);
-  if (opts?.live !== undefined) p.set("live", String(opts.live));
-  const q = p.toString();
-  return q ? `?${q}` : "";
-}
+export const getJourneyStatus = (journeyId = JOURNEY_ID) => request<DisruptionStatus>(`/journeys/${journeyId}/status`);
+export const getJourneyDetails = (journeyId = JOURNEY_ID) => request<IncidentDetails>(`/journeys/${journeyId}/details`);
+export const getAlternatives = (preferences: Preferences, journeyId = JOURNEY_ID) =>
+  post<AlternativesResponse>("/alternatives", { journey_id: journeyId, preferences });
 
-const stepOf = (step: number) => DELAY_STEPS[Math.min(step, DELAY_STEPS.length - 1)];
+// Commuter alerts
+export const registerCommuterTrip = (trip: CommuterTrip) => post<CommuterTrip>("/commuters/trips", trip);
+export const listCommuterTrips = (userId = USER_ID) =>
+  request<CommuterTrip[]>(`/commuters/trips?user_id=${encodeURIComponent(userId)}`);
+export const getAlerts = (userId = USER_ID) => request<CommuterAlert[]>(`/commuters/${userId}/alerts`);
 
-/** Replay options matching a step of the presenter panel. */
-export function replayFor(step: number): ReplayOptions {
-  // demo-1 replays the real incident: ask for the exact moment of the step.
-  if (JOURNEY_ID === DELAY_JOURNEY.id) return { at: stepOf(step).clock, live: false };
-  // Other journeys (demo-zh): step 0 = the scenario's "now", later steps move time
-  // forward by the same amount as the presenter steps.
-  if (step === 0) return { live: false };
-  return { minutesSinceStart: 5 + minutesBetween(DELAY_STEPS[0].clock, stepOf(step).clock), live: false };
-}
-
-/** `step` = index of the replayed incident version (presenter panel). */
-export function getJourneyStatus(journeyId: string, step: number): Promise<DisruptionStatus> {
-  return withFallback(
-    () => request(`/journeys/${journeyId}/status${replayQuery(replayFor(step))}`),
-    () => stepOf(step).status,
-  );
-}
-
-// "Why and how long?" screen: internal SBB info (KULT) known at the replay moment.
-export function getJourneyDetails(journeyId: string, step: number): Promise<IncidentDetails> {
-  return withFallback(
-    () => request(`/journeys/${journeyId}/details${replayQuery(replayFor(step))}`),
-    () => DELAY_DETAILS[Math.min(step, DELAY_DETAILS.length - 1)],
-  );
-}
-
-// Every published version of an incident + the estimate shown at that time (demo replay).
-export function getIncidentTimeline(incidentId: string): Promise<IncidentTimeline> {
-  return request(`/incidents/${incidentId}/timeline`);
-}
-
-// Commuter alert: P(line still disrupted when the train leaves). departure = "HH:MM" or ISO.
-export function getDepartureRisk(incidentId: string, departure: string, opts?: ReplayOptions): Promise<DepartureRisk> {
-  return request(`/incidents/${incidentId}/risk${replayQuery(opts, { departure })}`);
-}
-
-export function getAlternatives(journeyId: string, preferences: Preferences, step: number): Promise<AlternativesResponse> {
-  return withFallback(
-    () => request("/alternatives", {
-      method: "POST",
-      body: JSON.stringify({ journey_id: journeyId, preferences }),
-    }),
-    () => {
-      const st = stepOf(step);
-      return applyPreferences(st.alternatives, preferences, st.status.estimate.probabilities ?? [], st.clock);
-    },
-  );
-}
-
-export function registerCommuterTrip(trip: CommuterTrip): Promise<CommuterTrip> {
-  return withFallback(
-    () => request("/commuters/trips", { method: "POST", body: JSON.stringify(trip) }),
-    () => ({ ...trip, id: trip.id ?? "trip-1" }),
-  );
-}
-
-export function getNotifications(userId: string): Promise<Notification[]> {
-  return withFallback(() => request(`/commuters/${userId}/notifications`), () => []);
-}
+export const searchStops = (q: string) => request<Stop[]>(`/stops?q=${encodeURIComponent(q)}`);

@@ -33,8 +33,8 @@ Full team discussion summary, to give your AI assistant as context: [`docs/PROJE
 | Frontend | React 18 + TypeScript + Vite              |
 | Data     | Provided CSV/XLSX in `Daten/` (not committed), OJP 2.0 API |
 
-Everything currently returns **mock data**, so all three parts can be built in
-parallel and connected later. Look for `TODO` and `MOCK` in the code.
+The three parts are connected: the frontend only shows what the backend computes
+from the live situation of the demo journey (see "Demo" below).
 
 ## Project structure
 
@@ -53,7 +53,8 @@ parallel and connected later. Look for `TODO` and `MOCK` in the code.
 │       ├── main.py         # FastAPI app, wires the routers
 │       ├── config.py       # settings from env vars / .env
 │       ├── models.py       # ★ shared data contract (all three)
-│       ├── mock_data.py    # demo journey Lausanne → Fribourg
+│       ├── mock_data.py    # demo journeys (demo-zh, demo-1)
+│       ├── situation.py    # live situation of the demo incident (presenter controls)
 │       ├── api/
 │       │   ├── disruptions.py    # [A] GET  /journeys/{id}/status
 │       │   ├── alternatives.py   # [B] POST /alternatives
@@ -76,8 +77,7 @@ parallel and connected later. Look for `TODO` and `MOCK` in the code.
     └── src/
         ├── App.tsx               # screen flow
         ├── types.ts              # ★ mirror of backend/app/models.py
-        ├── api/client.ts         # calls the backend (or mocks)
-        ├── mocks/mockData.ts     # frontend-only mock data
+        ├── api/client.ts         # calls the backend
         ├── components/           # EstimateBanner, AlternativeCard
         └── screens/              # JourneyStatus, Personalise, Alternatives,
                                   # AlternativeList, CommuterSetup
@@ -112,13 +112,21 @@ uvicorn app.main:app --reload
 pytest                      # smoke tests
 ```
 
-**Frontend** (http://localhost:5173):
+**Frontend** (http://localhost:5173), always with the backend (no mock data):
 
 ```bash
 cd frontend
 npm install
-npm run dev                        # replayed demo scenario (mock), no backend needed
-VITE_USE_MOCKS=false npm run dev   # calls the backend, falls back to the mock on error
+npm run dev
+```
+
+From the repo root, without `cd`:
+
+```bash
+OJP_MODE=auto backend/.venv/bin/uvicorn app.main:app --app-dir backend --reload
+```
+```bash
+npm --prefix frontend run dev
 ```
 
 ## Demo
@@ -126,21 +134,28 @@ VITE_USE_MOCKS=false npm run dev   # calls the backend, falls back to the mock o
 Open http://localhost:5173 on a laptop: the app shows inside a phone frame, with
 **presenter controls** next to it (press `D` to hide/show, `?clean` hides them at load).
 
-1. **Delay mode**: "Start from My trips" → *What should I do?*. The screen asks one
-   question ("When do you need to be in Bern?") and answers with one advice and
-   a plain-word chance to make it ("Very likely · 9 in 10"). Step through the real
-   incident of 25.09.2026 (fire Puidoux – Vauderens) with "Next SBB update":
-   16:52 interruption (~18:00) → 17:12 replacement buses → 17:46 SBB moves to
-   ~18:45 → 18:15 service resumed. Details and the chart sit behind "Why and how long?".
-2. **Commuter alerts** (separate): "Show lock screen", then send the 3 alerts
-   (earlier train stuck → own train likely cancelled → line reopened). Tap a
-   notification to open the alert. Tick "Also send real OS notifications" for a
-   real macOS/Windows notification (Chrome on localhost).
+Everything the app shows is computed by the backend from one **live situation**
+(`backend/app/situation.py`). The presenter controls change it, and the status,
+the reopening estimate, the alternatives and the commuter alerts follow:
 
-All demo data lives in `frontend/src/mocks/scenario.ts`. To show it on a real
+- **demo-zh** (default): Zürich HB → Hinwil, S14 at 17:42, simulated interruption
+  Uster – Wetzikon ZH. Move the time (+5/+15/+30 min), publish a new end time
+  announced by SBB, start or stop replacement buses (the replacement-bus option
+  then appears in the alternatives), or reopen the line (normal trains again).
+- **demo-1** (`VITE_JOURNEY_ID=demo-1`): Lausanne → Bern, the real incident of
+  25.09.2026 (fire Puidoux – Vauderens) replayed from `Daten/`. Only the time
+  moves ("Next SBB update"); SBB's end time, the replacement buses (KULT ticker)
+  and the reopening come from the data.
+- **Commuter alerts**: add a regular trip in the app ("Add a regular trip", any
+  SBB station). The backend checks it against the situation and sends alerts
+  (earlier train hit → own train hit → line reopened), shown as banners, on the
+  lock screen ("Show lock screen") and, if ticked, as real OS notifications.
+
+OJP has no timetable for past days: for demo-1 the backend asks for the same
+weekday in the coming weeks and moves the answer back. To show it on a real
 phone on the same Wi-Fi: `npm run dev -- --host` and open the Network URL.
 
-## API (current stubs)
+## API
 
 | Method | Path | Returns |
 |---|---|---|
@@ -151,8 +166,13 @@ phone on the same Wi-Fi: `npm run dev -- --host` and open the Network URL.
 | GET | `/commuters/trips?user_id=` | list registered trips |
 | DELETE | `/commuters/trips/{trip_id}` | remove a trip |
 | GET | `/commuters/{user_id}/notifications` | `Notification[]` |
+| GET | `/commuters/{user_id}/alerts` | `CommuterAlert[]` (notification + reasons, trains on the line, options) |
+| GET | `/situation/{journey_id}` | `Situation` (clock, SBB end, replacement buses, reopening, updates) |
+| POST | `/situation/{journey_id}` | `SituationAction` (advance, set_official_end, replacement_bus, resume, next_update, reset) |
+| GET | `/journeys/{journey_id}/details` | `IncidentDetails` (internal KULT info) |
+| GET | `/stops?q=` | rail stations by name (SBB service points) |
 
-Use `demo-1` as the journey id for now.
+Journey ids: `demo-zh` (default) and `demo-1`.
 
 ## Data sources
 

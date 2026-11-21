@@ -1,9 +1,10 @@
-// Mock-side version of what the backend ranking (workstream B) should do:
+// Applied on top of the backend ranking (workstream B), with the backend's
+// reopening curve (workstream A):
 // - disable options that contradict the user's answers (with the reason),
 // - compute the chance to arrive by the user's deadline,
 // - re-sort each list and pick one recommended option.
 import type { Alternative, AlternativeCategory, AlternativesResponse, Certainty, Preferences, EndProbability } from "../types";
-import { onTimeChance } from "../lib/chance";
+import { onTimeChance } from "./chance";
 
 const BUS_MODES = new Set(["bus", "replacement_bus"]);
 const CERTAINTY_RANK: Record<Certainty, number> = { safe: 0, likely: 1, uncertain: 2 };
@@ -29,7 +30,7 @@ function check(a: Alternative, p: Preferences, curve: EndProbability[], now: str
   }
 
   return {
-    ...a, warnings, disabled_reason: reasons[0] ?? null, recommended: false,
+    ...a, warnings, disabled_reason: reasons[0] ?? a.disabled_reason ?? null, recommended: false,
     on_time_probability: p.deadline ? onTimeChance(a, p.deadline, curve, now) : null,
   };
 }
@@ -80,7 +81,13 @@ export function otherOptions(res: AlternativesResponse, p: Preferences, advice: 
     if (best) picked.push(best);
   }
   const order = (a: Alternative) => ranked.findIndex((r) => r.title === a.title);
-  return picked.sort((a, b) => order(a) - order(b)).slice(0, max);
+  const out = picked.sort((a, b) => order(a) - order(b)).slice(0, max);
+  // While SBB runs replacement buses, always show that option (greyed out with
+  // the reason when the traveller chose to avoid buses).
+  const isBus = (a: Alternative) => a.legs.some((l) => l.mode === "replacement_bus");
+  const bus = Object.values(res.by_category).flat().find(isBus);
+  if (bus && !out.some(isBus) && !(advice && isBus(advice))) out.push(bus);
+  return out;
 }
 
 export function pickAdvice(res: AlternativesResponse, p: Preferences): Alternative | null {
