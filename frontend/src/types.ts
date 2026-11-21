@@ -6,19 +6,66 @@ export interface Journey {
   id: string; origin: Stop; destination: Stop; departure: string; arrival: string; line: string;
 }
 
+export interface EndProbability {
+  time: string;
+  probability_ended: number; // 0.7 = "over by then in 70 % of similar cases"
+}
+
 export interface ReopeningEstimate {
   official_end: string | null;
-  likely_end_earliest: string | null;
-  likely_end_latest: string | null;
-  confidence: number | null;
+  likely_end_earliest: string | null; // never after official_end
+  likely_end_latest: string | null;   // never before official_end
+  confidence: number | null;          // P(end inside the likely range)
   similar_incidents_count: number;
   explanation: string;
+  // Added by Data & estimation (optional in the mocks)
+  ended?: boolean;
+  as_of?: string | null;
+  elapsed_minutes?: number | null;
+  median_end?: string | null;
+  wide_end_earliest?: string | null; // 10th percentile
+  wide_end_latest?: string | null;   // 90th percentile
+  probabilities?: EndProbability[];
+  method?: string; // "official_corrected" | "survival" | "ended" | "mock"
 }
 
 export interface DisruptionStatus {
   incident_id: string; journey_id: string; title: string;
   reason: string | null; affected_section: string | null;
   estimate: ReopeningEstimate; last_update: string;
+}
+
+export interface TimelinePoint {
+  time: string; title: string; kind: string; duration_type: string | null;
+  official_end: string | null; estimate: ReopeningEstimate; what_changed: string;
+}
+
+export interface IncidentTimeline {
+  incident_id: string; title: string; reason: string | null; affected_section: string | null;
+  start: string; real_end: string | null; points: TimelinePoint[];
+}
+
+export interface DepartureRisk {
+  incident_id: string; departure: string; as_of: string;
+  probability_still_disrupted: number; similar_incidents_count: number; explanation: string;
+}
+
+export interface InternalMessage { time: string; text: string }
+
+export interface IncidentDetails {
+  incident_id: string;
+  found: boolean;
+  kult_case_id: string | null;
+  match_score: number | null;
+  match_explanation: string;
+  operating_concept: string | null;
+  lines_affected: string[];
+  replacement_buses: string[];
+  cancelled_or_diverted_trains: string[];
+  travel_recommendations: string[];
+  ticket_goodwill: string[];
+  internal_messages: InternalMessage[];
+  internal_lead_minutes: number | null;
 }
 
 export interface Preferences {

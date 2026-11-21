@@ -30,16 +30,33 @@ class Journey(BaseModel):
     line: str  # e.g. "IC 5"
 
 
+class EndProbability(BaseModel):
+    """P(the line has reopened by `time`), e.g. 0.7 = "over by then in 70 % of similar cases"."""
+
+    time: datetime
+    probability_ended: float = Field(ge=0, le=1)
+
+
 class ReopeningEstimate(BaseModel):
     """Official SBB time is the headline. Our statistics only add a margin
-    around it and must never contradict it."""
+    around it and must never contradict it: the likely range always contains
+    the official time (when it is still in the future)."""
 
     official_end: datetime | None = Field(None, description="End time published by SBB, if any")
-    likely_end_earliest: datetime | None = None
-    likely_end_latest: datetime | None = None
-    confidence: float | None = Field(None, ge=0, le=1)
+    likely_end_earliest: datetime | None = None  # ~25th percentile, never after official_end
+    likely_end_latest: datetime | None = None    # ~75th percentile, never before official_end
+    confidence: float | None = Field(None, ge=0, le=1)  # P(end inside the likely range)
     similar_incidents_count: int = 0
     explanation: str = ""  # short human text, e.g. "Based on 34 similar incidents"
+    # --- added by Data & estimation (all optional, safe to ignore) ---
+    ended: bool = False                        # True once SBB reports service resumed
+    as_of: datetime | None = None              # moment the estimate refers to
+    elapsed_minutes: int | None = None         # how long the disruption has lasted at as_of
+    median_end: datetime | None = None         # 50th percentile
+    wide_end_earliest: datetime | None = None  # 10th percentile (80 % range)
+    wide_end_latest: datetime | None = None    # 90th percentile (80 % range)
+    probabilities: list[EndProbability] = []   # a few checkpoints for the UI text
+    method: str = ""                           # "official_corrected", "survival", "ended", "mock"
 
 
 class DisruptionStatus(BaseModel):
@@ -50,6 +67,68 @@ class DisruptionStatus(BaseModel):
     affected_section: str | None = None
     estimate: ReopeningEstimate
     last_update: datetime
+
+
+class TimelinePoint(BaseModel):
+    """One published version of an incident, with the estimate we would have shown then."""
+
+    time: datetime
+    title: str
+    kind: str  # "interruption", "restriction", "resumed"
+    duration_type: str | None = None
+    official_end: datetime | None = None
+    estimate: ReopeningEstimate
+    what_changed: str = ""  # e.g. "SBB moved the end from 18:00 to 18:45"
+
+
+class IncidentTimeline(BaseModel):
+    """Full replay of a past incident, for the live demo."""
+
+    incident_id: str
+    title: str
+    reason: str | None = None
+    affected_section: str | None = None
+    start: datetime
+    real_end: datetime | None = None
+    points: list[TimelinePoint]
+
+
+class DepartureRisk(BaseModel):
+    """For commuter alerts: will the line still be disrupted when my train leaves?"""
+
+    incident_id: str
+    departure: datetime
+    as_of: datetime
+    probability_still_disrupted: float = Field(ge=0, le=1)
+    similar_incidents_count: int = 0
+    explanation: str = ""
+
+
+class InternalMessage(BaseModel):
+    time: datetime
+    text: str
+
+
+class IncidentDetails(BaseModel):
+    """'More details' screen: internal SBB info (KULT ticker) matched to a public incident.
+
+    KULT has no common id with VIA: the match uses time, place and cause, and
+    `match_score` / `match_explanation` say how sure we are.
+    """
+
+    incident_id: str
+    found: bool = False
+    kult_case_id: str | None = None
+    match_score: float | None = None
+    match_explanation: str = ""
+    operating_concept: str | None = None          # e.g. "AESP - WANZ - RTR Total"
+    lines_affected: list[str] = []                # from VIA, e.g. ["IR15", "RE33"]
+    replacement_buses: list[str] = []             # ERSATZVERKEHR modules
+    cancelled_or_diverted_trains: list[str] = []  # BETRIEBSKONZEPT_* and MASSNAHMEN modules
+    travel_recommendations: list[str] = []        # REISEEMPFEHLUNG modules
+    ticket_goodwill: list[str] = []               # KULANZMASNAHMEN modules
+    internal_messages: list[InternalMessage] = []
+    internal_lead_minutes: int | None = None      # how much earlier staff were informed than the public
 
 
 # ---------------------------------------------------------------------------
