@@ -14,7 +14,10 @@
 3. `ranking.py` scores each category (weights in the module docstring), applies
    preferences, adds `ticket_validity` hints. Score 100 = best of its list.
 
-If OJP is unreachable (no key, offline without recordings) the old mock is returned.
+The disruption comes from the live situation (`app/situation.py`): searches start
+at its current time, the replacement bus is only offered while SBB runs it, and
+once the line has reopened the normal trips are returned. If OJP is unreachable
+(no key, offline without recordings) `POST /alternatives` answers 503.
 
 ## OJP modes (`OJP_MODE` in `.env`)
 

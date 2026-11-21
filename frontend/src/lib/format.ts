@@ -36,7 +36,15 @@ export function relativeLabel(from: string, now: string): string {
   return `${durationLabel(m)} ago`;
 }
 
-/** Build an ISO time from "HH:MM" on a given day (YYYY-MM-DD), Swiss summer time. */
+/** Build an ISO time from "HH:MM" on a given day (YYYY-MM-DD), Swiss local time (CET or CEST). */
 export function atTime(day: string, time: string): string {
-  return new Date(`${day}T${time}:00+02:00`).toISOString();
+  const guess = new Date(`${day}T${time}:00Z`);
+  const offsetMin = (new Date(guess.toLocaleString("en-US", { timeZone: TZ })).getTime()
+    - new Date(guess.toLocaleString("en-US", { timeZone: "UTC" })).getTime()) / 60_000;
+  return new Date(guess.getTime() - offsetMin * 60_000).toISOString();
+}
+
+/** Swiss calendar day (YYYY-MM-DD) of an ISO time. */
+export function swissDay(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-CA", { timeZone: TZ });
 }

@@ -97,7 +97,9 @@ export default function HowLongCard({ status, now }: { status: DisruptionStatus;
   return (
     <section className="card estimate">
       <h3>How long will it last?</h3>
-      <p>SBB expects trains again <strong>{e.official_label} {hhmm(e.official_end)}</strong>.</p>
+      {e.official_end
+        ? <p>SBB expects trains again <strong>{e.official_label} {hhmm(e.official_end)}</strong>.</p>
+        : <p>SBB has not announced an end time yet.</p>}
       {atOfficial && atMargin && (
         <p>
           We looked at {e.similar_incidents_count} similar incidents. The line was open again

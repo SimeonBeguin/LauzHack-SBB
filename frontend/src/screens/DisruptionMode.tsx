@@ -5,13 +5,18 @@
 // 4. Two or three other options. Everything else is one tap away.
 import { useStore } from "../store";
 import type { Alternative, DisruptionStatus, Journey } from "../types";
-import { atTime, durationLabel, hhmm, minutesBetween } from "../lib/format";
-import { DELAY_DAY } from "../mocks/scenario";
-import { otherOptions, rankedOptions } from "../mocks/applyPreferences";
+import { atTime, durationLabel, hhmm, minutesBetween, swissDay } from "../lib/format";
+import { otherOptions, rankedOptions } from "../lib/ranking";
 import { ChanceBadge, Chip, ConnectionCard, Header, Icon, labelFor, LineBadge, PillRow, SectionTitle } from "../components/ui";
 import { preferencesSummary } from "./PersonaliseSheet";
 
-const DEADLINES = ["19:00", "19:30", "20:00"];
+/** Deadline choices: the planned arrival + 30, 60 and 90 min, rounded up to a quarter hour. */
+function deadlineChoices(arrival: string): string[] {
+  return [30, 60, 90].map((m) => {
+    const t = new Date(arrival).getTime() + m * 60_000;
+    return hhmm(new Date(Math.ceil(t / 900_000) * 900_000).toISOString());
+  });
+}
 
 function JourneySummary({ j, status }: { j: Journey; status: DisruptionStatus }) {
   const resolved = status.kind === "resolved";
@@ -50,7 +55,9 @@ function StatusCard({ status, onMore }: { status: DisruptionStatus; onMore: () =
       <Icon name="alert" size={26} />
       <div>
         <strong>No trains between {status.affected_section?.split(" and ")[0]}</strong>
-        <p>{status.reason}. SBB expects trains again <b>{e.official_label} {hhmm(e.official_end)}</b>.</p>
+        <p>{status.reason}. {e.official_end
+          ? <>SBB expects trains again <b>{e.official_label} {hhmm(e.official_end)}</b>.</>
+          : <>SBB has not announced an end time yet.</>}</p>
         {atOfficial && atOfficial.probability_ended < 0.5 && (
           <p className="muted">Often it takes longer: in similar cases, {Math.round((1 - atOfficial.probability_ended) * 10)} out of 10 reopened later.</p>
         )}
@@ -60,11 +67,12 @@ function StatusCard({ status, onMore }: { status: DisruptionStatus; onMore: () =
   );
 }
 
-function DeadlineQuestion({ destination }: { destination: string }) {
-  const { prefs, setPrefs } = useStore();
+function DeadlineQuestion({ destination, arrival }: { destination: string; arrival: string }) {
+  const { prefs, setPrefs, clock } = useStore();
+  const DEADLINES = deadlineChoices(arrival);
   const current = prefs.deadline ? hhmm(prefs.deadline) : null;
   const isOther = current != null && !DEADLINES.includes(current);
-  const set = (hm: string | null) => setPrefs({ ...prefs, deadline: hm ? atTime(DELAY_DAY, hm) : null });
+  const set = (hm: string | null) => setPrefs({ ...prefs, deadline: hm ? atTime(swissDay(clock), hm) : null });
 
   return (
     <section className="card question">
@@ -115,7 +123,7 @@ export default function DisruptionMode() {
 
         <StatusCard status={status} onMore={() => push({ name: "details" })} />
 
-        <DeadlineQuestion destination={j?.destination.name ?? "your destination"} />
+        {j && <DeadlineQuestion destination={j.destination.name} arrival={j.arrival} />}
 
         {advice && (
           <>

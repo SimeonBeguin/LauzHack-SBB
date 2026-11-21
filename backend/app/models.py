@@ -241,3 +241,73 @@ class Notification(BaseModel):
     id: str | None = None
     kind: Literal["earlier_train", "own_train", "resolved"] | None = None
     probability: float | None = Field(None, ge=0, le=1)  # chance the own train is still hit
+
+
+# ---------------------------------------------------------------------------
+# Live situation of the demo incident (presenter controls, single source of truth)
+# ---------------------------------------------------------------------------
+
+class SituationUpdate(BaseModel):
+    """One published update of the incident (what a traveller would see change)."""
+
+    time: datetime
+    text: str
+
+
+class Situation(BaseModel):
+    """Current state of the incident on a demo journey. Status, estimate,
+    alternatives and commuter alerts are all computed from it.
+
+    mode "simulated": the presenter sets the values (demo-zh, fictitious incident).
+    mode "replay": the values come from the real liveticker / KULT data at `clock`.
+    """
+
+    journey_id: str
+    incident_id: str
+    mode: Literal["simulated", "replay"]
+    section: str
+    start: datetime
+    clock: datetime  # "now" of the demo
+    official_end: datetime | None = None
+    replacement_bus: bool = False
+    resumed_at: datetime | None = None
+    updates: list[SituationUpdate] = []
+    next_update: datetime | None = None  # replay: next real update after `clock`
+
+    @property
+    def resumed(self) -> bool:
+        return self.resumed_at is not None and self.resumed_at <= self.clock
+
+
+class SituationAction(BaseModel):
+    """advance: clock += minutes. set_official_end: SBB announces `time`.
+    replacement_bus: buses start (value=true) or stop. resume: line reopens now.
+    next_update: replay, jump to the next real update. reset: back to the start."""
+
+    action: Literal["advance", "set_official_end", "replacement_bus", "resume", "next_update", "reset"]
+    minutes: float | None = None
+    time: datetime | None = None
+    value: bool | None = None
+
+
+class LineTrain(BaseModel):
+    """A train on the commuter's route around their own departure."""
+
+    departure: datetime
+    line: str | None = None
+    state: Literal["stuck", "cancelled", "at_risk", "ok"]
+    note: str = ""
+    yours: bool = False
+
+
+class CommuterAlert(BaseModel):
+    """A notification with everything the alert screen shows, computed when it was sent."""
+
+    notification: Notification
+    trip: CommuterTrip
+    planned_departure: datetime
+    planned_arrival: datetime | None = None
+    headline: str
+    reasons: list[str] = []
+    line: list[LineTrain] = []
+    options: list[Alternative] = []

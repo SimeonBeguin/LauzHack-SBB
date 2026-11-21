@@ -1,10 +1,8 @@
 """Journey status and incident endpoints. Owner: Data & estimation.
 
-Journey status (used by the app):
+Journey status (used by the app), at the current moment of the journey's
+situation (app/situation.py, moved by the presenter controls):
     GET /journeys/{journey_id}/status
-        ?minutes_since_start=45     replay moment, minutes after the incident start
-        ?at=2026-09-25T17:50+02:00  or an exact moment
-        ?live=true                  shift all times so that this moment is "now" (default)
     GET /journeys/{journey_id}/details   internal KULT details ("More details" screen)
 
 Incidents (demo, notifications, routing):
@@ -13,8 +11,6 @@ Incidents (demo, notifications, routing):
     GET /incidents/{id}/status?at=...    status of any incident at any moment
     GET /incidents/{id}/risk?departure=07:32&at=...   P(still disrupted when my train leaves)
     GET /incidents/{id}/details?at=...   internal KULT details known at that moment
-
-Without the Daten/ folder the journey endpoints fall back to mock data.
 """
 
 from __future__ import annotations
@@ -25,19 +21,14 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 
 from app.estimation import estimator, kult, replay
-from app.mock_data import DEMO_INCIDENT_ID, get_journey
-from app.models import DepartureRisk, DisruptionStatus, IncidentDetails, IncidentTimeline
+from app.mock_data import get_journey
+from app import situation
+from app.routing.disruption import DEMO_SCENARIOS
+from app.models import (
+    DepartureRisk, DisruptionStatus, IncidentDetails, IncidentTimeline, ReopeningEstimate, Situation,
+)
 
 router = APIRouter(tags=["disruptions"])
-
-# Which real incident each demo journey replays.
-JOURNEY_INCIDENTS = {"demo-1": DEMO_INCIDENT_ID}
-
-
-def _incident_for(journey_id: str) -> str:
-    # TODO (with Routing): find the live incident affecting a real journey (OJP situations).
-    return JOURNEY_INCIDENTS.get(journey_id, DEMO_INCIDENT_ID)
-
 
 def _check_incident(incident_id: str) -> None:
     try:
@@ -48,51 +39,108 @@ def _check_incident(incident_id: str) -> None:
         raise HTTPException(404, f"Unknown incident {incident_id}")
 
 
-def _mock_status(journey_id: str) -> DisruptionStatus:
-    return DisruptionStatus(
-        incident_id=DEMO_INCIDENT_ID,
-        journey_id=journey_id,
-        title="MOCK: Interruption Puidoux - Vauderens",
-        reason="Fire",
-        affected_section="Puidoux - Vauderens",
-        estimate=estimator.estimate_reopening("mock-no-data"),
-        last_update=datetime.now().astimezone(),
-    )
-
-
 # ---------------------------------------------------------------------------
 # Journeys
 # ---------------------------------------------------------------------------
 
 @router.get("/journeys/{journey_id}/status", response_model=DisruptionStatus)
-def journey_status(
-    journey_id: str,
-    at: datetime | None = Query(None, description="Replay moment (ISO 8601)"),
-    minutes_since_start: float | None = Query(None, ge=0, description="Replay moment, minutes after the incident start"),
-    live: bool = Query(True, description="Shift all times so that the replayed moment is now"),
-) -> DisruptionStatus:
+def journey_status(journey_id: str) -> DisruptionStatus:
+    """Status of the journey at the current moment of its situation (see app/situation.py)."""
     journey = get_journey(journey_id)
-    incident_id = _incident_for(journey.id)
+    sit = situation.get(journey.id)
+    if sit is None:
+        raise HTTPException(404, f"No incident on journey {journey.id} (or the Daten/ folder is missing)")
+    return status_from_situation(sit, journey)
+
+
+def status_from_situation(sit: Situation, journey) -> DisruptionStatus:
+    changes = situation.latest_changes(sit)
+    last_update = sit.updates[-1].time if sit.updates else sit.clock
+    if sit.mode == "replay":
+        t = pd.Timestamp(sit.clock)
+        status = replay.status_at(sit.incident_id, journey.id, t)
+        try:
+            duration_type = replay._version_at(sit.incident_id, t)["duration_type"]
+        except (KeyError, IndexError):
+            duration_type = None
+        return status.model_copy(update={
+            "estimate": _with_ui_labels(status.estimate, duration_type),
+            "journey": journey,
+            "started_at": sit.start,
+            "kind": "resolved" if sit.resumed or status.estimate.ended else _kind_of(status.title),
+            "changes": changes,
+            "last_update": min(last_update, sit.clock),
+        })
+
+    reason_id = DEMO_SCENARIOS[sit.journey_id].reason_id
     try:
-        t = replay.resolve_time(incident_id, at, minutes_since_start)
-        status = replay.status_at(incident_id, journey.id, t)
-    except (FileNotFoundError, KeyError):
-        return _mock_status(journey.id)
-    return replay.shift_to_now(status, t) if live else status
+        reason = replay._reason_labels().get(reason_id, reason_id)
+    except FileNotFoundError:
+        reason = reason_id
+    return DisruptionStatus(
+        incident_id=sit.incident_id,
+        journey_id=journey.id,
+        title=f"Service resumed: {sit.section}" if sit.resumed else f"Interruption {sit.section}",
+        reason=reason,
+        affected_section=sit.section,
+        estimate=situation_estimate(sit),
+        last_update=last_update,
+        kind="resolved" if sit.resumed else "interruption",
+        started_at=sit.start,
+        journey=journey,
+        changes=changes,
+    )
+
+
+def situation_estimate(sit: Situation) -> ReopeningEstimate:
+    """The reopening estimate for the situation (shared with the routing)."""
+    journey = get_journey(sit.journey_id)
+    if sit.mode == "replay":
+        return status_from_situation(sit, journey).estimate
+    if sit.resumed:
+        return ReopeningEstimate(
+            official_end=sit.resumed_at, likely_end_earliest=sit.resumed_at, likely_end_latest=sit.resumed_at,
+            median_end=sit.resumed_at, confidence=1.0, ended=True, as_of=sit.clock, method="ended",
+            elapsed_minutes=int((sit.resumed_at - sit.start).total_seconds() // 60),
+            explanation=f"Service resumed at {sit.resumed_at.strftime('%H:%M')}.", official_label="reopened at",
+        )
+    est = estimator.estimate_live(DEMO_SCENARIOS[journey.id].reason_id, sit.start,
+                                  official_end=sit.official_end, at=sit.clock)
+    return _with_ui_labels(est, "UNTIL_APPROX_DATE_TIME" if sit.official_end else None)
+
+
+# How SBB phrases the announced end (liveticker duration_type), for the UI sentence
+# "SBB expects trains again <label> 18:00".
+_OFFICIAL_LABELS = {
+    "UNTIL": "until", "UNTIL_AT_LEAST": "at least until", "UNTIL_APPROX_DATE_TIME": "around",
+    "UNTIL_DATE": "until", "UNTIL_AT_LEAST_DATE_TIME": "at least until", "FROM_TO": "until",
+}
+
+
+def _with_ui_labels(e: ReopeningEstimate, duration_type: str | None) -> ReopeningEstimate:
+    """Fill the optional UI fields of the estimate from what we already know."""
+    label = "reopened at" if e.ended else _OFFICIAL_LABELS.get(str(duration_type), "around")
+    return e.model_copy(update={
+        "official_label": e.official_label or label,
+        "margin_until": e.margin_until or (None if e.ended else e.likely_end_latest),
+    })
+
+
+def _kind_of(title: str) -> str:
+    return "restriction" if title.lower().startswith(("restriction", "einschränkung")) else "interruption"
 
 
 @router.get("/journeys/{journey_id}/details", response_model=IncidentDetails)
-def journey_details(
-    journey_id: str,
-    at: datetime | None = None,
-    minutes_since_start: float | None = Query(None, ge=0),
-) -> IncidentDetails:
-    incident_id = _incident_for(get_journey(journey_id).id)
-    try:
-        t = replay.resolve_time(incident_id, at, minutes_since_start)
-    except (FileNotFoundError, KeyError):
-        return IncidentDetails(incident_id=incident_id, match_explanation="Data folder not found.")
-    return kult.incident_details(incident_id, t)
+def journey_details(journey_id: str) -> IncidentDetails:
+    """Internal SBB details (KULT ticker) known at the current moment of the situation."""
+    journey = get_journey(journey_id)
+    sit = situation.get(journey.id)
+    if sit is None:
+        return IncidentDetails(incident_id="", match_explanation="No incident on this journey.")
+    if sit.mode == "simulated":  # fictitious incident: there is no internal KULT case to show
+        return IncidentDetails(incident_id=sit.incident_id,
+                               match_explanation="Fictitious demo incident: no internal SBB details.")
+    return kult.incident_details(sit.incident_id, pd.Timestamp(sit.clock))
 
 
 # ---------------------------------------------------------------------------

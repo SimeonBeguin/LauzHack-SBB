@@ -1,20 +1,24 @@
 // Opened from a commuter notification. One statement, one recommended action,
 // one alternative. The "why" (reasons, trains on the line) is folded away.
+// Everything comes from the alert computed by the backend watcher.
 import { useStore } from "../store";
-import { COMMUTER_ALERTS, COMMUTER_TRIP } from "../mocks/scenario";
 import { hhmm } from "../lib/format";
 import { chanceLabel } from "../lib/chance";
 import { CertaintyBadge, ChanceBadge, Header, Icon, LineBadge } from "../components/ui";
 
 const STATE_LABEL = { stuck: "Stopped", cancelled: "Cancelled", at_risk: "May be affected", ok: "Running" };
 
-export default function CommuterAlert({ index }: { index: number }) {
-  const { back } = useStore();
-  const a = COMMUTER_ALERTS[index];
+export default function CommuterAlert({ id }: { id: string }) {
+  const { back, alerts, push } = useStore();
+  const a = alerts.find((x) => x.notification.id === id);
+  if (!a) return <Header title="Alert" onBack={back} />;
   const n = a.notification;
-  const trip = COMMUTER_TRIP;
+  const trip = a.trip;
   const resolved = n.kind === "resolved";
   const [advice, ...others] = a.options;
+  const detail = (o: typeof advice) =>
+    o.uses_blocked_line ? "Only if the line reopens in time"
+      : `${o.transfers === 0 ? "Direct" : `${o.transfers} change${o.transfers > 1 ? "s" : ""}`}, ${o.certainty_reason ?? ""}`;
 
   return (
     <>
@@ -24,9 +28,9 @@ export default function CommuterAlert({ index }: { index: number }) {
           <h2 className="summary-title">{trip.origin_name} <span className="arrow">→</span> {trip.destination_name}</h2>
           <div className={`timeline ${resolved ? "" : "cancelled"}`}>
             <LineBadge line={trip.line ?? "Train"} mode="train" />
-            <strong>{trip.departure_time}</strong>
+            <strong>{hhmm(a.planned_departure)}</strong>
             <span className="tl-track" aria-hidden="true" />
-            <strong>{trip.arrival_time}</strong>
+            <strong>{hhmm(a.planned_arrival)}</strong>
           </div>
           <p className="summary-sub">Your regular trip · alert at {hhmm(n.created_at)}</p>
         </section>
@@ -37,7 +41,7 @@ export default function CommuterAlert({ index }: { index: number }) {
             <p>{n.body}</p>
             {n.probability != null && (
               <div className="status-chance">
-                <span className="muted small">Chance your {trip.departure_time} runs normally</span>
+                <span className="muted small">Chance your {hhmm(a.planned_departure)} runs normally</span>
                 <ChanceBadge label={chanceLabel(1 - n.probability)} />
               </div>
             )}
@@ -52,36 +56,36 @@ export default function CommuterAlert({ index }: { index: number }) {
               <strong>{hhmm(advice.departure)}</strong>
               <Icon name="arrow" size={18} className="muted" />
               <strong>{hhmm(advice.arrival)}</strong>
-              <span className="muted small">{advice.detail}</span>
+              <span className="muted small">{detail(advice)}</span>
             </div>
             <CertaintyBadge certainty={advice.certainty} />
-            <button className="btn btn-primary">Show connection</button>
+            <button className="btn btn-primary" onClick={() => push({ name: "connection", id: `alert:${n.id}:${advice.id}` })}>
+              Show connection
+            </button>
           </section>
         )}
 
         {others.map((o) => (
-          <section key={o.title} className="card option-plain">
+          <section key={o.id} className="card option-plain">
             <div>
               <strong>{o.title}</strong>
-              <div className="muted small">{hhmm(o.departure)} → {hhmm(o.arrival)} · {o.detail}</div>
+              <div className="muted small">{hhmm(o.departure)} → {hhmm(o.arrival)} · {detail(o)}</div>
             </div>
             <CertaintyBadge certainty={o.certainty} />
           </section>
         ))}
 
-        {a.footer && <section className="card status-card ok"><Icon name="check" size={26} /><div><strong>{a.footer}</strong></div></section>}
-
         <details className="card why">
           <summary>Why are we telling you this? <Icon name="down" size={16} /></summary>
           <ul className="reasons">{a.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
-          <h3>Trains on your line</h3>
+          {a.line.length > 0 && <h3>Trains on your line</h3>}
           <ol className="line-timeline">
             {a.line.map((tr) => (
-              <li key={tr.time + tr.train} className={`lt lt-${tr.state} ${tr.yours ? "yours" : ""}`}>
-                <span className="lt-time">{hhmm(tr.time)}</span>
+              <li key={tr.departure + tr.line} className={`lt lt-${tr.state} ${tr.yours ? "yours" : ""}`}>
+                <span className="lt-time">{hhmm(tr.departure)}</span>
                 <span className="lt-dot" aria-hidden="true" />
                 <span className="lt-body">
-                  <strong>{tr.train}{tr.yours ? " (your train)" : ""}</strong>
+                  <strong>{tr.line ?? "Train"}{tr.yours ? " (your train)" : ""}</strong>
                   <span className="muted small">{STATE_LABEL[tr.state]}{tr.note ? `, ${tr.note.charAt(0).toLowerCase()}${tr.note.slice(1)}` : ""}</span>
                 </span>
               </li>

@@ -38,12 +38,18 @@ function LegCard({ leg }: { leg: Leg }) {
 }
 
 export default function ConnectionDetail({ id }: { id: string }) {
-  const { alternatives, back, status, prefs, showToast } = useStore();
+  const { alternatives, alerts, back, status, prefs, showToast } = useStore();
   const [saved, setSaved] = useState(false);
-  const a = alternatives && findAlt(Object.values(alternatives.by_category).flat(), id);
+  // "alert:<notification id>:<alternative id>": an option of a commuter alert
+  const [, alertId, altId] = id.startsWith("alert:") ? id.split(":") : [];
+  const alert = alertId ? alerts.find((x) => x.notification.id === alertId) : undefined;
+  const a = alert ? alert.options.find((o) => o.id === altId)
+    : alternatives ? findAlt(Object.values(alternatives.by_category).flat(), id) : undefined;
   if (!a) return <Header title="Connection" onBack={back} />;
 
-  const j = status?.journey;
+  const j = alert
+    ? { origin: { name: alert.trip.origin_name ?? "" }, destination: { name: alert.trip.destination_name ?? "" } }
+    : status?.journey;
   const rides = a.legs.filter((l) => l.mode !== "wait");
   const wait = a.legs.find((l) => l.mode === "wait");
 

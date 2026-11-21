@@ -50,7 +50,7 @@ export function reopenedBefore(points: EndProbability[], now: string, t: string)
  * Chance this option gets the traveller there by `deadline`.
  * - Routes that use the blocked line depend on when it reopens.
  * - Other routes depend on their own reliability, and must arrive in time.
- * MOCK logic: the backend (workstream A + B) should return `on_time_probability`.
+ * Uses the reopening curve of the backend estimate for routes through the blocked line.
  */
 export function onTimeChance(a: Alternative, deadline: string, curve: EndProbability[], now: string): number {
   const base = BASE[a.certainty ?? "uncertain"];

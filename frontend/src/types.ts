@@ -160,3 +160,48 @@ export interface Notification {
   kind?: NotificationKind;        // (UI)
   probability?: number | null;    // (UI) chance the commuter's own train is still hit
 }
+
+// --- Live situation of the demo incident (presenter controls) ---
+
+export interface SituationUpdate { time: string; text: string }
+
+export interface Situation {
+  journey_id: string;
+  incident_id: string;
+  mode: "simulated" | "replay";
+  section: string;
+  start: string;
+  clock: string;                 // "now" of the demo
+  official_end: string | null;
+  replacement_bus: boolean;
+  resumed_at: string | null;
+  updates: SituationUpdate[];
+  next_update: string | null;    // replay: next real update
+}
+
+export type SituationAction =
+  | { action: "advance"; minutes: number }
+  | { action: "set_official_end"; time: string }
+  | { action: "replacement_bus"; value: boolean }
+  | { action: "resume" }
+  | { action: "next_update" }
+  | { action: "reset" };
+
+// --- Commuter alerts, computed by the backend watcher ---
+
+export type LineTrainState = "stuck" | "cancelled" | "at_risk" | "ok";
+
+export interface LineTrain {
+  departure: string; line: string | null; state: LineTrainState; note: string; yours: boolean;
+}
+
+export interface CommuterAlert {
+  notification: Notification;
+  trip: CommuterTrip;
+  planned_departure: string;
+  planned_arrival: string | null;
+  headline: string;
+  reasons: string[];
+  line: LineTrain[];
+  options: Alternative[];
+}

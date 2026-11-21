@@ -15,8 +15,9 @@ Weights (equivalent minutes):
 | per walking minute       | 0       | 0      | 0.5     |
 | per km left to the dest. | -       | 4      | -       |
 
-Preferences are hard filters (an option is hidden), unless that would leave
-the list empty, in which case the options stay with a heavy penalty:
+Options that contradict the preferences stay in the list, ranked with a heavy
+penalty and with ``disabled_reason`` set (the replacement bus is always kept
+while it runs):
 ``avoid_replacement_bus`` (+60), ``max_transfers`` (+30 per extra transfer),
 ``deadline`` (+120). "Wait" options get a risk penalty of half the gap
 between the official reopening time and our conservative estimate.
@@ -35,7 +36,7 @@ from app.models import (
     Preferences,
 )
 from app.routing.disruption import DisruptionContext, get_disruption
-from app.routing.ojp_client import OJPClient, OJPError, to_model_leg
+from app.routing.ojp_client import OJPClient, to_model_leg
 from app.routing.planner import Candidate, PlanResult, minutes_between, plan
 from app.routing.ticket_validity import check_ticket
 
@@ -54,14 +55,19 @@ PENALTY_EXTRA_TRANSFER = 30
 PENALTY_DEADLINE = 120
 
 
-def find_alternatives(journey: Journey, prefs: Preferences, client: OJPClient | None = None) -> AlternativesResponse:
+def find_alternatives(journey: Journey, prefs: Preferences, client: OJPClient | None = None,
+                      sit=None) -> AlternativesResponse:
+    """Ranked alternatives for the journey in its live situation (app/situation.py).
+
+    `sit` defaults to the journey's own situation (commuter checks pass the demo
+    incident's). Raises OJPError when OJP is unreachable (no mock fallback).
+    """
+    from app import situation as situations
+
     client = client or OJPClient()
-    try:
-        ctx = get_disruption(journey, client)
-        result = plan(journey, prefs, ctx, client)
-    except OJPError as exc:
-        log.warning("OJP unavailable, returning mock alternatives: %s", exc)
-        return _mock_response(journey)
+    sit = sit or situations.get(journey.id)
+    ctx = get_disruption(journey, client, sit)
+    result = plan(journey, prefs, ctx, client, now=sit.clock if sit else None)
     return build_response(journey, prefs, result, ctx)
 
 
@@ -79,6 +85,10 @@ def build_response(
         AlternativeCategory.COMFORT: _rank(AlternativeCategory.COMFORT, at_dest, journey, prefs),
         AlternativeCategory.WAIT: _rank_wait(result.wait, journey, ctx),
     }
+    if ctx is None:  # no disruption (or the line has reopened): normal service
+        for alts in by_category.values():
+            for alt in alts:
+                alt.certainty_reason = "Normal service"
     return AlternativesResponse(journey_id=journey.id, by_category=by_category)
 
 
@@ -121,11 +131,19 @@ def _rank(category: AlternativeCategory, cands: list[Candidate], journey: Journe
           prefs: Preferences) -> list[Alternative]:
     if not cands:
         return []
-    ok = [c for c in cands if _preference_penalty(c, prefs) == 0]
-    pool = ok or cands  # never return an empty list just because of preferences
-    scored = sorted(((cost(category, c, journey) + _preference_penalty(c, prefs), c) for c in pool),
+    # Options that contradict the preferences stay in the list (ranked last, with
+    # the reason), so the traveller sees that e.g. a replacement bus exists.
+    scored = sorted(((cost(category, c, journey) + _preference_penalty(c, prefs), c) for c in cands),
                     key=lambda x: (x[0], x[1].trip.arrival))
-    return _to_alternatives(category, scored[:MAX_PER_CATEGORY])
+    kept = scored[:MAX_PER_CATEGORY]
+    bus = next((x for x in scored if x[1].uses_replacement_bus), None)
+    if bus and bus not in kept and category != AlternativeCategory.NEARBY:
+        kept.append(bus)  # always show the replacement bus while it runs
+    kept = _kept_after_gap(kept, [bus] if bus else [])
+    alts = _to_alternatives(category, kept)
+    for alt, (_, c) in zip(alts, kept):
+        alt.disabled_reason = _preference_conflict(c, prefs)
+    return alts
 
 
 def _rank_wait(cands: list[Candidate], journey: Journey, ctx: DisruptionContext | None) -> list[Alternative]:
@@ -137,14 +155,28 @@ def _rank_wait(cands: list[Candidate], journey: Journey, ctx: DisruptionContext 
             value += 0.5 * max(0.0, minutes_between(ctx.reopening_official, ctx.reopening_safe))
         scored.append((value, c))
     scored.sort(key=lambda x: x[0])
-    return _to_alternatives(AlternativeCategory.WAIT, scored[:MAX_PER_CATEGORY])
+    return _to_alternatives(AlternativeCategory.WAIT, _kept_after_gap(scored[:MAX_PER_CATEGORY], []))
+
+
+def _preference_conflict(c: Candidate, prefs: Preferences) -> str | None:
+    if prefs.avoid_replacement_bus and c.uses_replacement_bus:
+        return "You chose to avoid replacement buses"
+    if prefs.max_transfers is not None and c.trip.transfers > prefs.max_transfers:
+        return f"More than {prefs.max_transfers} change(s)"
+    return None
+
+
+def _kept_after_gap(scored: list[tuple[float, Candidate]], keep: list) -> list[tuple[float, Candidate]]:
+    if not scored:
+        return []
+    best = scored[0][0]
+    return [x for i, x in enumerate(scored) if i < 2 or x[0] - best <= MAX_GAP_TO_BEST or x in keep]
 
 
 def _to_alternatives(category: AlternativeCategory, scored: list[tuple[float, Candidate]]) -> list[Alternative]:
     if not scored:
         return []
     best = scored[0][0]
-    scored = [x for i, x in enumerate(scored) if i < 2 or x[0] - best <= MAX_GAP_TO_BEST]
     out = []
     for i, (value, c) in enumerate(scored, start=1):
         alt = Alternative(
@@ -158,8 +190,36 @@ def _to_alternatives(category: AlternativeCategory, scored: list[tuple[float, Ca
             score=round(max(0.0, 100.0 - (value - best)), 1),
         )
         alt.ticket_valid, alt.ticket_hint = check_ticket(alt)
+        _add_display_fields(alt, category, c)
         out.append(alt)
     return out
+
+
+def _add_display_fields(alt: Alternative, category: AlternativeCategory, c: Candidate) -> None:
+    """Optional fields of the contract that the frontend shows (title, departure, certainty)."""
+    rides = [leg for leg in alt.legs if leg.mode not in ("walk", "wait")]
+    alt.departure = (rides or alt.legs)[0].departure if alt.legs else None
+    alt.uses_blocked_line = category == AlternativeCategory.WAIT
+    if category == AlternativeCategory.WAIT:
+        alt.title = "Wait for the line to reopen"
+        alt.certainty, alt.certainty_reason = "uncertain", "Depends on when the line reopens"
+        return
+    bus = next((leg for leg in rides if leg.mode == "replacement_bus"), None)
+    if bus:
+        alt.title = f"Replacement bus {bus.from_stop.name} - {bus.to_stop.name}"
+    elif not c.at_destination:
+        alt.title = f"Get off at {alt.final_stop.name}"
+    elif len(rides) > 1:
+        alt.title = f"Go via {rides[0].to_stop.name}"
+    else:
+        alt.title = f"Direct {rides[0].line or 'connection'}" if rides else "Alternative route"
+    if not c.at_destination:
+        alt.certainty = "likely"
+        alt.certainty_reason = f"Ends {c.distance_km:.1f} km from your destination"
+    elif c.uses_replacement_bus:
+        alt.certainty, alt.certainty_reason = "likely", "Replacement buses can be slowed by traffic"
+    else:
+        alt.certainty, alt.certainty_reason = "safe", "Avoids the blocked section"
 
 
 def _is_noise(leg) -> bool:
@@ -170,29 +230,3 @@ def _is_noise(leg) -> bool:
 def score(alt: Alternative, prefs: Preferences) -> float:
     """Kept for compatibility: the score is computed in find_alternatives()."""
     return alt.score
-
-
-# ---------------------------------------------------------------------------
-# Fallback when OJP is not reachable (no key, offline without recordings)
-# ---------------------------------------------------------------------------
-
-def _mock_response(journey: Journey) -> AlternativesResponse:
-    base = journey.arrival
-    dest = journey.destination
-
-    def alt(i: str, cat: AlternativeCategory, delay: int, transfers: int, km: float = 0.0) -> Alternative:
-        return Alternative(
-            id=i, category=cat, arrival=base + timedelta(minutes=delay), final_stop=dest,
-            distance_to_destination_km=km, transfers=transfers, ticket_valid=True,
-            ticket_hint="MOCK: your ticket is valid on this route",
-        )
-
-    return AlternativesResponse(
-        journey_id=journey.id,
-        by_category={
-            AlternativeCategory.FASTEST: [alt("f1", AlternativeCategory.FASTEST, 25, 2), alt("f2", AlternativeCategory.FASTEST, 40, 1)],
-            AlternativeCategory.NEARBY: [alt("n1", AlternativeCategory.NEARBY, 15, 1, 6.5)],
-            AlternativeCategory.COMFORT: [alt("c1", AlternativeCategory.COMFORT, 55, 0)],
-            AlternativeCategory.WAIT: [alt("w1", AlternativeCategory.WAIT, 70, 0)],
-        },
-    )

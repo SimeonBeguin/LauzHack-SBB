@@ -1,4 +1,4 @@
-"""Hardcoded demo journey so all three workstreams can run before real data is wired in."""
+"""The demo journeys. Their incident lives in app/situation.py."""
 
 from datetime import datetime, timedelta
 
@@ -6,16 +6,18 @@ from app.models import Journey, Stop
 
 _now = datetime.now().astimezone().replace(second=0, microsecond=0)
 
+# Real incident replayed on demo-1 (same as the estimation tests): fire
+# Puidoux - Vauderens, 25.09.2026, with the journey on that day.
+DEMO_INCIDENT_ID = "2195005195853"
+
 DEMO_JOURNEY = Journey(
     id="demo-1",
     origin=Stop(id="8501120", name="Lausanne", lat=46.5168, lon=6.6291),
-    destination=Stop(id="8504100", name="Fribourg/Freiburg", lat=46.8032, lon=7.1513),
-    departure=_now + timedelta(minutes=10),
-    arrival=_now + timedelta(minutes=55),
-    line="IR 15",
+    destination=Stop(id="8507000", name="Bern", lat=46.949, lon=7.4391),
+    departure=datetime.fromisoformat("2026-09-25T17:20:00+02:00"),
+    arrival=datetime.fromisoformat("2026-09-25T18:26:00+02:00"),
+    line="IC 1",
 )
-
-DEMO_INCIDENT_ID = "2195004439194"
 
 
 def _next_weekday_at(hour: int, minute: int) -> datetime:

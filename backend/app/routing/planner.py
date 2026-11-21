@@ -7,8 +7,9 @@ Searches (run in parallel, ~10-14 OJP calls in total, cached 45 s):
   Effretikon / Pfäffikon ZH instead of S14 via Uster);
 - one ``Via`` search per detour hub of the scenario (e.g. via Rapperswil);
 - trips to the closest stations within the destination radius;
-- trip to the section entry + a replacement bus over the section (timed with
-  TomTom when a key is set) + trip from the section exit to the destination;
+- only while SBB runs replacement buses (live situation): trip to the section
+  entry + a replacement bus over the section (timed with TomTom when a key is
+  set) + trip from the section exit to the destination;
 - "wait": the planned route after the announced reopening.
 
 Every candidate that still runs through the section is dropped from the
@@ -94,9 +95,11 @@ def _safe(fn, *args, **kwargs) -> list[OJPTrip]:
         return []
 
 
-def plan(journey: Journey, prefs: Preferences, ctx: DisruptionContext | None, client: OJPClient) -> PlanResult:
+def plan(journey: Journey, prefs: Preferences, ctx: DisruptionContext | None, client: OJPClient,
+         now: datetime | None = None) -> PlanResult:
+    """`now`: current moment of the situation; trips leaving before it are not offered."""
     origin, dest = journey.origin.id, journey.destination.id
-    dep = journey.departure
+    dep = max(journey.departure, now) if now else journey.departure
     result = PlanResult()
 
     base = client.trip(origin, dest, dep, num_results=6)  # let OJPError propagate: nothing works without it
@@ -137,8 +140,10 @@ def plan(journey: Journey, prefs: Preferences, ctx: DisruptionContext | None, cl
             s.id: pool.submit(_safe, client.trip, origin, s.id, dep, 3, not_via=not_via)
             for s, _ in radius_stops
         }
-        f_replacement = pool.submit(_replacement_bus_trips, client, journey, ctx, entry, exit_)
-        f_wait = pool.submit(_wait_trips, client, journey, ctx, affected_trips[0], entry)
+        # Replacement buses only when SBB actually runs them (live situation)
+        f_replacement = (pool.submit(_replacement_bus_trips, client, journey, ctx, entry, exit_, dep)
+                         if ctx.replacement_bus else None)
+        f_wait = pool.submit(_wait_trips, client, journey, ctx, affected_trips[0], entry, dep)
 
         found: list[Candidate] = []
         if f_detour:
@@ -148,7 +153,8 @@ def plan(journey: Journey, prefs: Preferences, ctx: DisruptionContext | None, cl
         for sid, f in f_radius.items():
             found += [_candidate(t, f"radius:{sid}", journey.destination) for t in f.result()]
         found += [_candidate(t, "base", journey.destination) for t in base]
-        found += [_candidate(t, "replacement_bus", journey.destination) for t in f_replacement.result()]
+        if f_replacement:
+            found += [_candidate(t, "replacement_bus", journey.destination) for t in f_replacement.result()]
         result.wait = [_candidate(t, src, journey.destination) for t, src in f_wait.result()]
 
     earliest = dep - timedelta(minutes=1)
@@ -169,18 +175,18 @@ def plan(journey: Journey, prefs: Preferences, ctx: DisruptionContext | None, cl
 # ---------------------------------------------------------------------------
 
 def _replacement_bus_trips(
-    client: OJPClient, journey: Journey, ctx: DisruptionContext, entry: str, exit_: str
+    client: OJPClient, journey: Journey, ctx: DisruptionContext, entry: str, exit_: str, dep: datetime
 ) -> list[OJPTrip]:
     origin, dest = journey.origin.id, journey.destination.id
     if entry == origin:
         to_entry: list[OJPTrip] = []
     else:
-        to_entry = [t for t in _safe(client.trip, origin, entry, journey.departure, 2)
+        to_entry = [t for t in _safe(client.trip, origin, entry, dep, 2)
                     if not trip_uses_section(t, ctx.section)]
         if not to_entry:
             return []
     first = to_entry[0] if to_entry else None
-    bus_dep = (first.arrival if first else journey.departure) + REPLACEMENT_TRANSFER
+    bus_dep = (first.arrival if first else dep) + REPLACEMENT_TRANSFER
     entry_stop, exit_stop = _stop(entry), _stop(exit_)
 
     rt = road_time(entry_stop, exit_stop, bus_dep)
@@ -228,7 +234,7 @@ def _ceil_minute(t: datetime) -> datetime:
 # ---------------------------------------------------------------------------
 
 def _wait_trips(
-    client: OJPClient, journey: Journey, ctx: DisruptionContext, planned: OJPTrip, entry: str
+    client: OJPClient, journey: Journey, ctx: DisruptionContext, planned: OJPTrip, entry: str, dep: datetime
 ) -> list[tuple[OJPTrip, str]]:
     """First trip on the planned route that enters the section after the
     official reopening, and the first one after our conservative estimate."""
@@ -238,7 +244,7 @@ def _wait_trips(
     for target, src in ((ctx.reopening_official, "wait"), (ctx.reopening_safe, "wait_margin")):
         if out and target <= ctx.reopening_official:
             continue
-        search_from = max(journey.departure, target - lead - timedelta(minutes=1))
+        search_from = max(dep, target - lead - timedelta(minutes=1))
         trips = _safe(client.trip, journey.origin.id, journey.destination.id, search_from, 5)
         for t in trips:
             t_in = _section_entry_time(t, ctx)
