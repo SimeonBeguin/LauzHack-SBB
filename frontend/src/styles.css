@@ -1,0 +1,14 @@
+/* SBB-like look. TODO: refine with the mockup (docs/mode-perturbation-v1.png) */
+:root {
+  --sbb-red: #eb0000;
+  --text: #2d327d;
+  --bg: #f6f6f6;
+  font-family: system-ui, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+body { margin: 0; }
+.app { max-width: 420px; margin: 0 auto; padding: 16px; }
+.header { background: var(--sbb-red); color: white; padding: 12px 16px; margin: -16px -16px 16px; }
+.card { background: white; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
+button { cursor: pointer; }
