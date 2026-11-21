@@ -1,11 +1,10 @@
-// Simulated phone lock screen: the commuter alerts sent by the backend.
+// Simulated phone lock screen: the commuter and booked-trip alerts sent by the backend.
 import { useStore } from "../store";
-import type { CommuterAlert } from "../types";
+import type { Notification } from "../types";
 import { dayLabel, hhmm } from "../lib/format";
 import { Icon } from "../components/ui";
 
-export function NotificationCard({ alert, onOpen, now }: { alert: CommuterAlert; onOpen: () => void; now?: string }) {
-  const n = alert.notification;
+export function NotificationCard({ notification: n, onOpen, now }: { notification: Notification; onOpen: () => void; now?: string }) {
   const isNow = now && n.created_at === now;
   return (
     <button className={`notif notif-${n.kind}`} onClick={onOpen}>
@@ -22,9 +21,15 @@ export function NotificationCard({ alert, onOpen, now }: { alert: CommuterAlert;
   );
 }
 
+/** Commuter and booked-trip notifications, newest first. */
+export function allNotifications(lists: { notification: Notification }[][]): Notification[] {
+  return lists.flat().map((a) => a.notification)
+    .sort((x, y) => new Date(y.created_at).getTime() - new Date(x.created_at).getTime());
+}
+
 export default function LockScreen() {
-  const { clock, alerts, push } = useStore();
-  const items = [...alerts].reverse();
+  const { clock, alerts, bookingAlerts, openAlert } = useStore();
+  const items = allNotifications([alerts, bookingAlerts]);
 
   return (
     <div className="lock">
@@ -34,9 +39,8 @@ export default function LockScreen() {
         <div className="lock-time">{hhmm(clock)}</div>
       </div>
       <div className="lock-stack">
-        {items.map((a) => (
-          <NotificationCard key={a.notification.id} alert={a} now={clock}
-            onOpen={() => push({ name: "commuterAlert", id: a.notification.id ?? "" })} />
+        {items.map((n) => (
+          <NotificationCard key={n.id} notification={n} now={clock} onOpen={() => openAlert(n.id ?? "")} />
         ))}
       </div>
       <div className="lock-hint">{items.length ? "Tap a notification to open it" : "No notifications"}</div>

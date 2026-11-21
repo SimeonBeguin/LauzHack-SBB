@@ -1,7 +1,8 @@
 // Presenter-only controls, outside the phone. Toggle with the "D" key.
 // They change the live situation on the backend (time, time announced by SBB,
 // replacement buses, reopening); the app, the alternatives and the commuter
-// alerts all follow from it.
+// alerts all follow from it. The traffic-jam control only changes what the
+// prevention checks see (booked trips, bus delay forecasts).
 import { useEffect, useState } from "react";
 import { useStore } from "../store";
 import { JOURNEY_ID } from "../api/client";
@@ -97,6 +98,25 @@ export default function DemoPanel({ onClose }: { onClose: () => void }) {
               <button onClick={() => s.reset({ name: "disruption" })}>Open “Need help”</button>
               <button onClick={() => { s.setSheetOpen(false); void s.act({ action: "reset" }); }}>Reset the demo</button>
             </div>
+          </section>
+
+          <section>
+            <h3>Prevention: booked trips and bus delays</h3>
+            <p>
+              {s.bookings.length
+                ? `${s.bookings.length} booked trip(s) watched, ${s.bookingAlerts.length} alert(s) so far.`
+                : "No booked trip yet: add one in the app (“Add a booked trip”, a bus then a train with a short change works best)."}
+            </p>
+            <div className="demo-row">
+              <span>Traffic jam on the bus route:</span>
+              {[null, 8, 15].map((m) => (
+                <button key={String(m)} className={s.jam === m ? "active" : ""} aria-pressed={s.jam === m}
+                  onClick={() => s.setJam(m)}>
+                  {m ? `+${m} min` : "None"}
+                </button>
+              ))}
+            </div>
+            <p className="demo-update">Simulated on every bus leg; works without a TomTom key. SBB’s real-time data does not show it.</p>
           </section>
 
           <section>

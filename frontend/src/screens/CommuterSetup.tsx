@@ -11,12 +11,13 @@ import type { CommuterTrip, Stop } from "../types";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-function StopField({ label, value, onChange }: { label: string; value: Stop | null; onChange: (s: Stop | null) => void }) {
+export function StopField({ label, value, onChange }: { label: string; value: Stop | null; onChange: (s: Stop | null) => void }) {
   const [text, setText] = useState(value?.name ?? "");
   const [options, setOptions] = useState<Stop[]>([]);
   const listId = `stops-${label}`;
 
-  useEffect(() => { setText(value?.name ?? ""); }, [value?.id]);
+  // Show the picked stop's name; while typing (value cleared) keep what the user typed.
+  useEffect(() => { if (value) setText(value.name); }, [value?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (text.trim().length < 2 || text === value?.name) return;

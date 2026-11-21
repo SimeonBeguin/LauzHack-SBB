@@ -13,6 +13,9 @@ import LockScreen, { NotificationCard } from "./screens/LockScreen";
 import CommuterAlert from "./screens/CommuterAlert";
 import ConnectionDetail from "./screens/ConnectionDetail";
 import Personalize from "./screens/Personalize";
+import BookingSetup from "./screens/BookingSetup";
+import BookingAlertScreen from "./screens/BookingAlert";
+import PlanTrip from "./screens/PlanTrip";
 import DemoPanel from "./demo/DemoPanel";
 import { Icon } from "./components/ui";
 
@@ -28,6 +31,9 @@ function Screen() {
     case "commuterAlert": return <CommuterAlert id={route.id} />;
     case "connection": return <ConnectionDetail id={route.id} />;
     case "personalize": return <Personalize />;
+    case "bookingSetup": return <BookingSetup />;
+    case "bookingAlert": return <BookingAlertScreen id={route.id} />;
+    case "plan": return <PlanTrip />;
   }
 }
 
@@ -55,7 +61,7 @@ const TABS = [
 
 function TabBar() {
   const { reset, showToast, route } = useStore();
-  const activeId = ["disruption", "list", "details", "connection", "personalize"].includes(route.name) ? "plan" : "trips";
+  const activeId = ["disruption", "list", "details", "connection", "personalize", "plan"].includes(route.name) ? "plan" : "trips";
   return (
     <nav className="tabbar">
       {TABS.map((t) => {
@@ -77,8 +83,8 @@ function TabBar() {
 }
 
 function Phone() {
-  const { route, toast, banner, dismissBanner, push, sheetOpen, alerts, clock } = useStore();
-  const bannerAlert = banner ? alerts.find((a) => a.notification.id === banner) : undefined;
+  const { route, toast, banner, dismissBanner, sheetOpen, clock, findNotification, openAlert } = useStore();
+  const bannerNotification = banner ? findNotification(banner) : undefined;
   const isLock = route.name === "lock";
 
   return (
@@ -90,10 +96,10 @@ function Phone() {
         </div>
         {!isLock && <TabBar />}
         <PersonaliseSheet />
-        {bannerAlert && (
+        {bannerNotification && (
           <div className="banner-layer">
-            <NotificationCard alert={bannerAlert} now={clock}
-              onOpen={() => { dismissBanner(); push({ name: "commuterAlert", id: banner! }); }} />
+            <NotificationCard notification={bannerNotification} now={clock}
+              onOpen={() => { dismissBanner(); openAlert(banner!); }} />
           </div>
         )}
         {toast && <div className="toast" role="status">{toast}</div>}
@@ -104,7 +110,7 @@ function Phone() {
 
 function Shell() {
   const [panel, setPanel] = useState(() => !new URLSearchParams(location.search).has("clean"));
-  const { push } = useStore();
+  const { push, openAlert } = useStore();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -127,11 +133,11 @@ function Shell() {
     if (!("serviceWorker" in navigator)) return;
     const onMsg = (e: MessageEvent) => {
       if (e.data?.type !== "open-alert") return;
-      if (e.data.id) push({ name: "commuterAlert", id: e.data.id });
+      if (e.data.id) openAlert(e.data.id);
     };
     navigator.serviceWorker.addEventListener("message", onMsg);
     return () => navigator.serviceWorker.removeEventListener("message", onMsg);
-  }, [push]);
+  }, [openAlert]);
 
   return (
     <div className={`stage ${panel ? "with-panel" : ""}`}>

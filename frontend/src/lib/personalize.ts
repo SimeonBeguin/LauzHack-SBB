@@ -220,6 +220,8 @@ function riskMinutes(a: Alternative, status: DisruptionStatus | null): number {
     if (a.arrival_latest) return Math.max(0, minutesBetween(a.arrival, a.arrival_latest)) / 2;
     return 15;
   }
+  // reliability gauge (Prevention): usual delay from road traffic at that hour
+  if (a.reliability) return a.reliability.expected_delay_minutes;
   const road = Math.max(0, ...a.legs.map((l) => l.road_delay_minutes ?? 0));
   const base = a.certainty === "uncertain" ? 10 : a.certainty === "likely" ? 4 : 0;
   return base + road;

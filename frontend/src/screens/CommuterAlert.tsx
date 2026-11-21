@@ -5,12 +5,15 @@ import { useStore } from "../store";
 import { hhmm } from "../lib/format";
 import { chanceLabel } from "../lib/chance";
 import { CertaintyBadge, ChanceBadge, Header, Icon, LineBadge } from "../components/ui";
+import BookingAlertScreen from "./BookingAlert";
 
 const STATE_LABEL = { stuck: "Stopped", cancelled: "Cancelled", at_risk: "May be affected", ok: "Running" };
 
 export default function CommuterAlert({ id }: { id: string }) {
-  const { back, alerts, push } = useStore();
+  const { back, alerts, bookingAlerts, push } = useStore();
   const a = alerts.find((x) => x.notification.id === id);
+  // opened from an OS notification of a booked trip
+  if (!a && bookingAlerts.some((x) => x.notification.id === id)) return <BookingAlertScreen id={id} />;
   if (!a) return <Header title="Alert" onBack={back} />;
   const n = a.notification;
   const trip = a.trip;

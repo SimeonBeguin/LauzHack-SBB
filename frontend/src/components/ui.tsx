@@ -4,7 +4,7 @@
 import type { ReactNode } from "react";
 import type { Alternative, Certainty, Leg } from "../types";
 import { durationLabel, hhmm, minutesBetween } from "../lib/format";
-import { chanceLabel, RELIABILITY, type ChanceLabel } from "../lib/chance";
+import { chanceLabel, gaugeOf, RELIABILITY, reliabilityLabel, type ChanceLabel } from "../lib/chance";
 
 // ---------------------------------------------------------------------------
 // Icons (inline SVG, inherit currentColor)
@@ -141,8 +141,12 @@ export function tripMinutes(a: Alternative): number {
 // ---------------------------------------------------------------------------
 // Chance: one word + colour + "x in 10"
 // ---------------------------------------------------------------------------
-export function labelFor(alt: Pick<Alternative, "on_time_probability" | "certainty">): ChanceLabel | null {
+export function labelFor(
+  alt: Pick<Alternative, "on_time_probability" | "certainty" | "reliability" | "uses_blocked_line">,
+): ChanceLabel | null {
   if (alt.on_time_probability != null) return chanceLabel(alt.on_time_probability);
+  const gauge = gaugeOf(alt);
+  if (gauge) return reliabilityLabel(gauge);
   return alt.certainty ? RELIABILITY[alt.certainty] : null;
 }
 
@@ -196,6 +200,7 @@ export function ConnectionCard({ alt, deadline, onOpen, tag, highlight, noTab, c
         <span className="muted">{alt.transfers === 0 ? "Direct" : `${alt.transfers} change${alt.transfers > 1 ? "s" : ""}`}</span>
         <span className="conn-dur">{durationLabel(tripMinutes(alt))}</span>
       </span>
+      {!disabled && !noTab && gaugeOf(alt) && <span className="conn-reason muted">{gaugeOf(alt)!.reason}</span>}
       {disabled && <span className="disabled-reason">Not shown: {alt.disabled_reason}</span>}
       {children}
     </button>

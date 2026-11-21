@@ -479,3 +479,32 @@ input[type="range"]::-moz-range-thumb { width: 24px; height: 24px; border-radius
 .pz-change { margin: -2px 8px 0; font-size: 14.5px; font-weight: 400; color: var(--granite); gap: 6px; flex-wrap: wrap; text-align: left; }
 .pz-change-cta { color: var(--red); font-weight: 700; }
 .pz-anchor { scroll-margin-top: 112px; } /* below the sticky red bar */
+
+/* ------------------------------------------------------- prevention */
+.conn-reason { font-size: 15px; line-height: 1.35; margin-top: -4px; }
+.leg-warn { font-size: 15px; color: var(--ok); font-weight: 700; line-height: 1.35; }
+.leg-forecast { display: flex; flex-direction: column; gap: 2px; font-size: 15px; color: var(--ok); background: var(--ok-soft); border-radius: 10px; padding: 8px 10px; margin-top: 4px; }
+.leg-forecast b { font-weight: 700; }
+.leg-forecast .muted { color: var(--iron); }
+.pill-sub.change-fair { color: var(--ok); font-weight: 700; }
+.pill-sub.change-low { color: var(--bad); font-weight: 700; }
+.trip-alert.warn { color: var(--ok); }
+.trip-alert.warn svg { color: #e89200; }
+.small-link { font-size: 14px; font-weight: 400; color: var(--granite); margin-top: 0; }
+.booked-line { display: flex; align-items: center; gap: 10px; }
+.booked-line .timeline { flex: 1; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.field-row .field input { min-width: 0; width: 100%; }
+.plan-note { font-size: 15px; line-height: 1.35; color: var(--iron); background: var(--milk); border-radius: 10px; padding: 8px 10px; }
+.check-card { display: flex; flex-direction: column; gap: 10px; }
+.check-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.check-row { display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: start; }
+.check-dot { width: 12px; height: 12px; border-radius: 50%; margin-top: 4px; background: var(--good); }
+.check-at_risk .check-dot { background: #e89200; }
+.check-broken .check-dot { background: var(--bad); }
+.check-body { display: flex; flex-direction: column; gap: 2px; font-size: 15.5px; }
+.check-word { font-weight: 700; color: var(--good); }
+.check-at_risk .check-word { color: var(--ok); }
+.check-broken .check-word { color: var(--bad); }
+.check-time { font-weight: 700; font-size: 15px; }
+.demo-row button.active { border-color: var(--red) !important; background: var(--red-soft) !important; color: var(--red-125); font-weight: 600; }

@@ -10,6 +10,7 @@ import { useStore } from "../store";
 import type { Alternative, DisruptionStatus, Journey } from "../types";
 import { atTime, durationLabel, hhmm, minutesBetween, swissDay } from "../lib/format";
 import { otherOptions, rankedOptions } from "../lib/ranking";
+import { gaugeOf, reasonFor } from "../lib/chance";
 import { ChanceBadge, Chip, ConnectionCard, Header, Icon, labelFor, LineBadge, PillRow, SectionTitle } from "../components/ui";
 import { preferencesSummary } from "./PersonaliseSheet";
 import { answersOf, answersSummary, personalPick, type PersonalPick } from "../lib/personalize";
@@ -105,6 +106,7 @@ function Advice({ alt, deadline, onOpen, pick }: {
         <ChanceBadge big label={labelFor(alt)} suffix={deadline ? `to arrive by ${hhmm(deadline)}` : undefined} />
         {pick ? (
           <span className="pz-reasons">
+            {gaugeOf(alt) && gaugeOf(alt)!.level !== "good" && <span className="muted">{gaugeOf(alt)!.reason}</span>}
             {pick.lastMile && (
               <span className="pz-arrive">At your destination around <b>{hhmm(pick.arrivalAtDestination)}</b></span>
             )}
@@ -112,7 +114,7 @@ function Advice({ alt, deadline, onOpen, pick }: {
             {pick.compromise && <span className="warn-line">{pick.compromise}</span>}
           </span>
         ) : (
-          <span className="muted">{alt.certainty_reason}.</span>
+          reasonFor(alt) && <span className="muted">{reasonFor(alt)}</span>
         )}
         {late && <span className="warn-line">No option gets you there by {hhmm(deadline)}. This is the earliest you can arrive.</span>}
       </span>

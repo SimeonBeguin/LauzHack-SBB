@@ -1,7 +1,7 @@
 // Turn probabilities into words a tired traveller understands at a glance.
 // We never show a bare percentage on the main screens: a word, a colour and
 // "x in 10" (natural frequencies are easier to read than percentages).
-import type { Alternative, Certainty, EndProbability } from "../types";
+import type { Alternative, Certainty, EndProbability, ReliabilityLevel, TripReliability } from "../types";
 import { minutesBetween } from "./format";
 
 export type Tone = "good" | "ok" | "bad";
@@ -30,6 +30,22 @@ export const RELIABILITY: Record<Certainty, ChanceLabel> = {
   likely: { word: "Probably fine", tone: "ok", freq: "" },
   uncertain: { word: "Uncertain", tone: "bad", freq: "" },
 };
+
+/** Reliability gauge (Prevention, idea 3): the backend word with our colour. */
+const LEVEL_TONE: Record<ReliabilityLevel, Tone> = { good: "good", fair: "ok", low: "bad" };
+export function reliabilityLabel(r: TripReliability): ChanceLabel {
+  return { word: r.label, tone: LEVEL_TONE[r.level], freq: "" };
+}
+
+/** The gauge applies to routes that run normally; "wait" options depend on the reopening instead. */
+export function gaugeOf(a: Pick<Alternative, "reliability" | "uses_blocked_line">): TripReliability | null {
+  return a.reliability && !a.uses_blocked_line ? a.reliability : null;
+}
+
+/** One short sentence on why an option is (un)reliable. */
+export function reasonFor(a: Pick<Alternative, "reliability" | "uses_blocked_line" | "certainty_reason">): string | null {
+  return gaugeOf(a)?.reason ?? a.certainty_reason ?? null;
+}
 
 const BASE: Record<Certainty, number> = { safe: 0.95, likely: 0.85, uncertain: 0.6 };
 

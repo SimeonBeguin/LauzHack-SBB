@@ -143,6 +143,7 @@ export interface Alternative {
   uses_blocked_line?: boolean;         // (UI)
   warnings?: string[];                 // (UI)
   on_time_probability?: number | null; // (UI) chance to arrive by preferences.deadline
+  reliability?: TripReliability | null; // Prevention: only with include_reliability
 }
 
 export interface AlternativesResponse {
@@ -159,7 +160,9 @@ export interface CommuterTrip {
   arrival_time?: string | null;      // (UI)
 }
 
-export type NotificationKind = "earlier_train" | "own_train" | "resolved";
+export type NotificationKind =
+  | "earlier_train" | "own_train" | "resolved"  // commuter alerts
+  | "booked_train_disrupted" | "connection_broken" | "connection_at_risk" | "booking_back_to_normal"; // booked trips
 
 export interface Notification {
   trip_id: string;
@@ -215,4 +218,97 @@ export interface CommuterAlert {
   reasons: string[];
   line: LineTrain[];
   options: Alternative[];
+}
+
+// --- Prevention (mirror of the "Prevention" models in backend/app/models.py) ---
+// Show words, not numbers: `label` + `reason`; if a number is needed, "x in 10".
+
+export type ReliabilityLevel = "good" | "fair" | "low";
+
+export interface LegReliability {
+  mode: string; line: string | null; from_stop: Stop; to_stop: Stop; departure: string;
+  road_exposure: number;              // 1 = bus in traffic, 0 = own track
+  typical_congestion_minutes: number;
+  expected_delay_minutes: number;
+  level: ReliabilityLevel; reason: string;
+}
+
+export interface TransferRisk {
+  at_stop: Stop; arrival: string; departure: string; walk_minutes: number;
+  margin_minutes: number; expected_incoming_delay_minutes: number;
+  probability_missed: number; level: ReliabilityLevel;
+}
+
+export interface TripReliability {
+  level: ReliabilityLevel;
+  label: string;                      // show this
+  reason: string;                     // and this
+  expected_delay_minutes: number;
+  probability_late_5min: number;
+  on_time_probability: number | null; // only when a deadline was given
+  effective_arrival: string | null;
+  road_share: number;
+  legs: LegReliability[];
+  transfers: TransferRisk[];
+  source: "tomtom_historic" | "rush_hour_profile";
+}
+
+export interface PlannedTrip {
+  id: string; legs: Leg[]; departure: string; arrival: string; transfers: number;
+  reliability: TripReliability; recommended: boolean;
+  note: string | null;                // "6 min later than the fastest, but more reliable: ..."
+}
+export interface ReliablePlanResponse { trips: PlannedTrip[]; ranking: string }
+
+export interface StopForecast {
+  stop: Stop; planned_arrival: string;
+  official_delay_minutes: number; predicted_delay_minutes: number;
+}
+export interface SegmentForecast {
+  from_stop: Stop; to_stop: Stop; reached_at: string;
+  live_minutes: number | null; typical_minutes: number | null; free_flow_minutes: number | null;
+  added_delay_minutes: number; jam: boolean;
+}
+export interface BusDelayForecast {
+  line: string | null; from_stop: Stop; to_stop: Stop;
+  planned_departure: string; planned_arrival: string; as_of: string;
+  current_delay_minutes: number;
+  official_delay_minutes: number;     // what SBB shows now
+  predicted_delay_minutes: number;    // what we expect
+  extra_minutes: number;              // predicted - official: > 0 = we see it before SBB
+  stops: StopForecast[]; segments: SegmentForecast[];
+  confidence: "high" | "medium" | "low";
+  source: "tomtom_live" | "simulated" | "too_early" | "unavailable";
+  explanation: string;
+}
+export interface BusDelayResponse {
+  trip_departure: string | null; trip_arrival: string | null; forecasts: BusDelayForecast[];
+}
+
+export type TicketKind = "supersaver" | "point_to_point" | "travelcard";
+
+export interface BookedTrip {
+  id?: string | null; user_id: string;
+  origin_stop_id: string; destination_stop_id: string;
+  departure: string;                  // ISO, the backend snaps it to the real connection
+  origin_name?: string | null; destination_name?: string | null;
+  ticket_kind?: TicketKind;
+  legs?: Leg[]; arrival?: string | null;  // filled by the backend
+  push_token?: string | null;
+}
+export interface ConnectionCheck {
+  at_stop: Stop; arrival: string; departure: string; margin_minutes: number;
+  probability_missed: number; status: "ok" | "at_risk" | "broken"; cause: string;
+}
+export interface BookingAlert {
+  notification: Notification; booking: BookedTrip; headline: string; reasons: string[];
+  connections: ConnectionCheck[]; bus_forecasts: BusDelayForecast[];
+  options: Alternative[]; ticket_note: string | null;
+}
+export type BookingState = "ok" | "at_risk" | "broken" | "disrupted" | "not_watched";
+export interface BookingStatus {
+  booking: BookedTrip; as_of: string;
+  state: BookingState;
+  summary: string; connections: ConnectionCheck[]; bus_forecasts: BusDelayForecast[];
+  reliability: TripReliability | null;
 }
