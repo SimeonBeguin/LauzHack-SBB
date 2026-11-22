@@ -92,7 +92,7 @@ export default function CommuterSetup() {
       <div className="content overlap">
         <p className="intro-card card">
           We warn you before your train is affected, even when the problem starts on an earlier train on your line.
-          We start watching 2 hours before your usual departure.
+          We start watching 3 hours before your usual departure.
         </p>
         <section className="card form">
           <StopField label="From" value={origin} onChange={setOrigin} />

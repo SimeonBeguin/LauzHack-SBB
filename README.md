@@ -1,194 +1,146 @@
-# SBB Disruption Helper (LauzHack)
+# SBB Disruption Helper
 
-A **"Need help / disruption mode"** for an SBB-style travel app. When your journey
-is disrupted, the app tells you honestly what is going on and what you can do.
+When a train line is cut, travellers get little information, late, and the
+announced end keeps moving. **SBB Disruption Helper** is a "Need help" mode for
+the SBB app that turns disruption data into the traveller's best next move: is
+my train running, when will the line really reopen, what should *I* do now, and
+it warns commuters before they even leave home.
 
-## What the product does
+LauzHack 2026, SBB challenge.
 
-1. **Journey status with an honest estimate.** The official SBB reopening time
-   stays the headline. Under it we show a statistical range ("likely between
-   18:10 and 18:40") learned from similar past incidents in the liveticker data.
-   The range never contradicts the official time.
-2. **Personalise.** A few quick questions with sensible defaults: arrive within
-   10 km of the destination, no deadline, avoid replacement buses, etc.
-3. **Three alternative categories plus "wait"**, each opening a ranked list:
-   - **Fastest arrival** at the destination
-   - **Close to destination**: stops within *x* km (SBB service point coordinates + OJP 2.0 searches)
-   - **Most comfortable**: fewer transfers, no bus
-   - **Wait**: staying put is a real option, using the reopening estimate
-4. **Ticket validity hint** on each alternative.
-5. **Push notifications for commuters** who register a regular trip, including
-   an early alert when an *earlier* train on the same line is hit.
-6. *(Optional)* Real-time road traffic (TomTom / HERE) to correct replacement bus times.
+**Step-by-step guide to run and use it: [`GUIDE.md`](GUIDE.md).** Hackathon submission summary: [`SUBMISSION.md`](SUBMISSION.md). 
+Backend: [`backend/README.md`](backend/README.md). Frontend: [`frontend/README.md`](frontend/README.md).
 
-UI mockup: [`docs/mode-perturbation-v1.png`](docs/mode-perturbation-v1.png).
-Data notes (French): [`docs/data-analysis-fr.md`](docs/data-analysis-fr.md).
-Full team discussion summary, to give your AI assistant as context: [`docs/PROJECT_CONTEXT.md`](docs/PROJECT_CONTEXT.md).
-
-## Stack
-
-| Part     | Tech                                      |
-|----------|-------------------------------------------|
-| Backend  | Python 3.10+, FastAPI, pandas, httpx      |
-| Frontend | React 18 + TypeScript + Vite              |
-| Data     | Provided CSV/XLSX in `Daten/` (not committed), OJP 2.0 API |
-
-The three parts are connected: the frontend only shows what the backend computes
-from the live situation of the demo journey (see "Demo" below).
-
-## Project structure
-
-```
-.
-├── README.md
-├── .gitignore              # keeps Daten/, .env, node_modules, .venv out of git
-├── .env.example            # copy to .env, add your API keys (never commit .env)
-├── Daten/                  # provided hackathon data (git-ignored, share it locally)
-├── docs/                   # mockup and data notes
-├── notebooks/              # [A] data exploration
-├── backend/
-│   ├── requirements.txt
-│   ├── tests/test_api.py   # smoke tests for every endpoint
-│   └── app/
-│       ├── main.py         # FastAPI app, wires the routers
-│       ├── config.py       # settings from env vars / .env
-│       ├── models.py       # ★ shared data contract (all three)
-│       ├── mock_data.py    # demo journeys (demo-zh, demo-1)
-│       ├── situation.py    # live situation of the demo incident (presenter controls)
-│       ├── api/
-│       │   ├── disruptions.py    # [A] GET  /journeys/{id}/status
-│       │   ├── alternatives.py   # [B] POST /alternatives
-│       │   └── notifications.py  # [C] /commuters/trips, /commuters/{user}/notifications
-│       ├── estimation/           # [A] data & reopening estimate
-│       │   ├── loaders.py        #     read Daten/ CSV + XLSX
-│       │   ├── features.py       #     incident history, similar incidents
-│       │   └── estimator.py      #     estimate_reopening()
-│       ├── routing/              # [B] alternatives
-│       │   ├── ojp_client.py     #     OJP 2.0 trip / location requests
-│       │   ├── service_points.py #     stops within x km of destination
-│       │   ├── ranking.py        #     build + rank the 4 categories
-│       │   ├── ticket_validity.py#     ticket hint
-│       │   └── road_traffic.py   #     optional TomTom / HERE
-│       ├── prevention/           # warn before a delay (docs/prevention-frontend-handoff.md)
-│       │   ├── reliability.py    #     reliability gauge from usual traffic (rush hours)
-│       │   ├── bus_delay.py      #     future bus delay from live traffic (TomTom)
-│       │   └── bookings.py       #     booked trips: connection at risk alerts
-│       └── notifications/        # [C] commuter alerts
-│           ├── subscriptions.py  #     registered trips (in memory)
-│           └── watcher.py        #     match incidents to trips, earlier-train alert
-└── frontend/
-    ├── package.json
-    └── src/
-        ├── App.tsx               # screen flow
-        ├── types.ts              # ★ mirror of backend/app/models.py
-        ├── api/client.ts         # calls the backend
-        ├── components/           # EstimateBanner, AlternativeCard
-        └── screens/              # JourneyStatus, Personalise, Alternatives,
-                                  # AlternativeList, CommuterSetup
-```
-
-## Who owns what
-
-| Workstream | Owner | Folders | First goals |
+| My trips | Need help | Best for you | Commuter alert |
 |---|---|---|---|
-| **A. Data & estimation** | _TBD_ | `notebooks/`, `backend/app/estimation/`, `api/disruptions.py` | Load the liveticker audit data, rebuild real incident durations, compute a range from similar incidents, plug it into `estimate_reopening()` |
-| **B. Routing & OJP** | _TBD_ | `backend/app/routing/`, `api/alternatives.py` | Get an OJP API key, make `OJPClient.trip()` work, radius search on service points, rank the 4 categories, ticket hint |
-| **C. Frontend, UX & notifications** | _TBD_ | `frontend/`, `backend/app/notifications/`, `api/notifications.py` | Build the screens from the mockup, Personalise flow, commuter trip registration, push alerts (incl. earlier train on the same line) |
+| ![My trips](docs/img/1-my-trips.png) | ![Need help](docs/img/2-need-help.png) | ![Best for you](docs/img/4-best-for-you.png) | ![Lock screen](docs/img/7-lock-screen.png) |
 
-**Shared:** `backend/app/models.py` and `frontend/src/types.ts` are the contract
-between the three parts. Agree on changes together and update both files in the
-same commit.
+## The problem
 
-## Getting started
+We analysed the three SBB sources we were given (public liveticker, internal
+KULT ticker, VIA event reports):
+
+- **Late.** The first public message comes about **39 min** after the incident
+  is created; staff know after about 3 min.
+- **Optimistic.** The first announced end is too early in **68 %** of incidents,
+  and it is moved several times (8–9 versions per incident on average).
+- **Generic.** A message says what is broken, not what *this* traveller should
+  do: wait, take another route, get off earlier, or not go to the station yet.
+
+## What we built
+
+| | What it does | How |
+|---|---|---|
+| **Honest reopening estimate** | Keeps SBB's time as the headline and adds a range and plain-word chances ("likely between 18:40 and 19:30") | Past incidents still ongoing after the same time, same cause: their gap between announced and real end. Back-tested on 2026 ([chart](docs/calibration-2026.png)): 17 % better than the announcement alone, calibrated |
+| **One clear advice** | "Need help" shows one connection, with a reliability label and its % ("Reliable · 95%") | ~13 OJP 2.0 searches in parallel: detours, stations near the destination, replacement bus, waiting for the reopening |
+| **Personalized** | 3 questions: where can you get off, what suits you best, what you travel with | A cost in minutes per option: arrival + weights for changes, replacement bus and uncertainty (formula in [`frontend/README.md`](frontend/README.md)) |
+| **Commuter alerts** | From **3 h before** a regular trip, any interruption on its line sends an alert: will my train run, what to take instead | The estimate tells how likely the line is still closed when *my* train gets there |
+| **Booked trips** | Warns when a trip paid in advance is hit, or a change becomes too tight | Live incidents, bus delays from road traffic (TomTom), usual delays at that hour |
+| **SBB messages** | "Details" shows the official SBB messages (buses, detours, causes) as travellers saw them | Public liveticker messages, version by version |
+| **Ticket validity** | "Your ticket is valid on these routes" on every option | SBB rules during disruptions |
+
+## User journey
+
+1. **My trips:** the 17:42 to Hinwil is marked "Your train does not run".
+2. **What should I do?** → **Need help:** our advice, e.g. "Go via Wetzikon ZH, 18:04 → 18:52, Reliable · 99%".
+3. **Personalize:** three taps; the advice changes (wait for the line, get off at Wetzikon and be picked up…).
+4. **Details:** where, why, since when, when trains will probably run again, and SBB's own messages.
+5. **Commuters:** a regular trip gets a notification on the lock screen hours before, with the advice inside.
+
+## Run it
+
+Needs Python 3.10+ and Node 18+. The data folder `Daten/` (provided by SBB, not
+in git) goes at the repo root. From the repository root:
 
 ```bash
-cp .env.example .env        # then fill in OJP_API_KEY (and optional TomTom/HERE)
-# put the provided data in ./Daten (same layout as received)
+python3 -m venv backend/.venv && backend/.venv/bin/pip install -r backend/requirements.txt
+npm --prefix frontend install
+cp .env.example .env            # optional keys: OJP_API_KEY, TOMTOM_API_KEY
 ```
-
-**Backend** (http://localhost:8000, API docs at http://localhost:8000/docs):
 
 ```bash
-cd backend
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-pytest                      # smoke tests
+OJP_MODE=replay backend/.venv/bin/uvicorn app.main:app --app-dir backend --reload
 ```
 
-**Frontend** (http://localhost:5173), always with the backend (no mock data):
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-From the repo root, without `cd`:
-
-```bash
-OJP_MODE=auto backend/.venv/bin/uvicorn app.main:app --app-dir backend --reload
-```
 ```bash
 npm --prefix frontend run dev
 ```
 
+Open **http://localhost:5173**. `OJP_MODE=replay` runs offline from the recorded
+OJP answers in `backend/data/ojp_recordings/` (no key needed). With an OJP key,
+`OJP_MODE=auto` uses the recordings and calls OJP for anything new; `live`
+always calls it. The replayed incident: `VITE_JOURNEY_ID=demo-1 npm --prefix frontend run dev`.
+
 ## Demo
 
-Open http://localhost:5173 on a laptop: the app shows inside a phone frame, with
-**presenter controls** next to it (press `D` to hide/show, `?clean` hides them at load).
+The app runs in a phone frame. The **presenter panel** next to it (`D` hides it)
+changes the live situation; everything in the app follows.
 
-Everything the app shows is computed by the backend from one **live situation**
-(`backend/app/situation.py`). The presenter controls change it, and the status,
-the reopening estimate, the alternatives and the commuter alerts follow:
+**Zürich HB → Hinwil, evening commute** (default, `demo-zh`). The S14 at 17:42 is
+cut between Uster and Wetzikon ZH (simulated; its SBB messages come from the real
+incident on that section of 11.06.2024).
 
-- **demo-zh** (default): Zürich HB → Hinwil, S14 at 17:42, simulated interruption
-  Uster – Wetzikon ZH. Move the time (+5/+15/+30 min), publish a new end time
-  announced by SBB, start or stop replacement buses (the replacement-bus option
-  then appears in the alternatives), or reopen the line (normal trains again).
-- **demo-1** (`VITE_JOURNEY_ID=demo-1`): Lausanne → Bern, the real incident of
-  25.09.2026 (fire Puidoux – Vauderens) replayed from `Daten/`. Only the time
-  moves ("Next SBB update"); SBB's end time, the replacement buses (KULT ticker)
-  and the reopening come from the data.
-- **Commuter alerts**: add a regular trip in the app ("Add a regular trip", any
-  SBB station). The backend checks it against the situation and sends alerts
-  (earlier train hit → own train hit → line reopened), shown as banners, on the
-  lock screen ("Show lock screen") and, if ticked, as real OS notifications.
+| Presenter action | What the app says |
+|---|---|
+| Start (SBB: trains again ~18:42) | Take the S3 via Wetzikon, arriving 18:52 |
+| Personalize (right at my destination, I accept anything), then publish "SBB expects trains again at 18:00" | Wait for your 17:42, arriving 18:22 |
+| Personalize: "Further away, someone picks me up" | Get off at Bubikon or Wetzikon, earlier, and be picked up |
+| "Replacement buses running" | The bus appears in "See all connections" and in the SBB messages of "Details" |
+| Add a regular trip 17:42 | "Your 17:42 will probably not run", on the lock screen |
+| "Line reopens now" | "Line reopened" |
 
-OJP has no timetable for past days: for demo-1 the backend asks for the same
-weekday in the coming weeks and moves the answer back. To show it on a real
-phone on the same Wi-Fi: `npm run dev -- --host` and open the Network URL.
+**Coppet → Lausanne, morning commute.** Always in "My trips". Four buttons
+(08:10 line closed, 09:11 end moved, 09:26 replacement buses, 11:04 line
+reopened) show the notifications a commuter on the 08:19 RE33 would get, written
+after the real incident Gland – Nyon of 5 March 2025.
 
-## API
+**Lausanne → Bern, replay** (`demo-1`). The real fire Puidoux – Vauderens of
+25.09.2026, replayed version by version with the internal KULT details.
 
-| Method | Path | Returns |
-|---|---|---|
-| GET | `/health` | `{"status": "ok"}` |
-| GET | `/journeys/{journey_id}/status` | `DisruptionStatus` (incident + `ReopeningEstimate`) |
-| POST | `/alternatives` | body `{journey_id, preferences}` → `AlternativesResponse` (list per category) |
-| POST | `/commuters/trips` | register a `CommuterTrip` |
-| GET | `/commuters/trips?user_id=` | list registered trips |
-| DELETE | `/commuters/trips/{trip_id}` | remove a trip |
-| GET | `/commuters/{user_id}/notifications` | `Notification[]` |
-| GET | `/commuters/{user_id}/alerts` | `CommuterAlert[]` (notification + reasons, trains on the line, options) |
-| GET | `/situation/{journey_id}` | `Situation` (clock, SBB end, replacement buses, reopening, updates) |
-| POST | `/situation/{journey_id}` | `SituationAction` (advance, set_official_end, replacement_bus, resume, next_update, reset) |
-| GET | `/journeys/{journey_id}/details` | `IncidentDetails` (internal KULT info) |
-| POST | `/prevention/plan` | body `ReliablePlanRequest` → trips ranked by reliability (usual traffic at that hour) |
-| GET | `/prevention/bus-delay?origin_stop_id=&destination_stop_id=&departure=` | `BusDelayResponse`: future bus delay from live traffic (TomTom) |
-| POST / GET / DELETE | `/prevention/bookings` | trips paid in advance (`BookedTrip`) |
-| GET | `/prevention/bookings/{booking_id}/status` | `BookingStatus` (connections, bus forecasts, reliability) |
-| GET | `/prevention/{user_id}/booking-alerts` | `BookingAlert[]` (connection at risk / broken, disruption) |
-| GET | `/stops?q=` | rail stations by name (SBB service points) |
+"Reset the demo" starts again and removes the trips added during the demo.
 
-Journey ids: `demo-zh` (default) and `demo-1`.
+## Real vs. simulated
 
-## Data sources
+| Part | State |
+|---|---|
+| Reopening estimate, back-test, probabilities | **Real**, on the provided data (523 incidents, 2024–2026) |
+| Alternatives and timetables | **Real** OJP 2.0 answers (live, or recorded for offline replay) |
+| Stations near the destination | **Real** SBB service points |
+| SBB messages, KULT details, replayed incident (`demo-1`) | **Real** data |
+| Zürich → Hinwil incident | **Simulated**, controlled by the presenter; messages from the real incident of 11.06.2024 |
+| Coppet → Lausanne notifications | **Staged** by hand, after a real incident |
+| Replacement bus times, bus delay forecast | **Real** TomTom traffic with a key; estimated without; jams can be simulated |
+| Notifications | In-app and lock screen; real OS notifications in the browser; no server push |
+| Users, trips, bookings | In memory, one demo user |
 
-- `Daten/extern-liveticker/`: public liveticker (incidents, full audit trail, messages, causes). See its README.
-- `Daten/intern-liveticker/`: internal KULT ticker (cases, categories, messages, logs). See `README-intern.md`.
-- `Daten/Ereignismeldungen/`: VIA event reports (XLSX).
-- [opentransportdata.swiss OJP 2.0](https://opentransportdata.swiss/en/cookbook/open-journey-planner-ojp/): trip planning (API key in `.env`).
-- SBB service points (stops with coordinates) for the radius search.
+## Data
 
-The `Daten/` folder is git-ignored because it contains internal data. Do not push it.
+- `Daten/extern-liveticker/`: public liveticker, 523 incidents with every version and message (2024–2026).
+- `Daten/intern-liveticker/`: internal KULT ticker, September 2026 (replacement buses, cancelled trains, ticket goodwill).
+- `Daten/Ereignismeldungen/`: VIA event reports, September 2026 (lines affected, publication times).
+- [OJP 2.0](https://opentransportdata.swiss) (opentransportdata.swiss): trip planning; SBB service points; TomTom traffic.
+
+`Daten/` and `.env` are git-ignored: never commit them.
+
+## Repository
+
+```
+.
+├── backend/        FastAPI: estimation, routing (OJP), alerts, prevention, tests
+├── frontend/       React app in a phone frame, presenter panel
+├── docs/           demo-pitch.md (pitch and demo script), calibration chart, img/ (screenshots)
+├── GUIDE.md        how to run and use the app, demo scenarios
+├── SUBMISSION.md   short project summary for the submission
+├── .env.example    settings (API keys, OJP mode)
+└── Daten/          provided data (git-ignored)
+```
+
+## Tests
+
+```bash
+backend/.venv/bin/python -m pytest backend/tests
+npm --prefix frontend run build
+```
+
+37 backend tests, offline: API, estimation on the real data, routing on the demo
+journeys, commuter alerts, booked-trip checks. The frontend build type-checks the app.

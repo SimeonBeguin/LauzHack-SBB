@@ -15,6 +15,7 @@ Incidents (demo, notifications, routing):
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 import pandas as pd
@@ -25,7 +26,7 @@ from app.mock_data import get_journey
 from app import situation
 from app.routing.disruption import DEMO_SCENARIOS
 from app.models import (
-    DepartureRisk, DisruptionStatus, IncidentDetails, IncidentTimeline, ReopeningEstimate, Situation,
+    DepartureRisk, DisruptionStatus, IncidentDetails, IncidentTimeline, PublicMessage, ReopeningEstimate, Situation,
 )
 
 router = APIRouter(tags=["disruptions"])
@@ -139,8 +140,12 @@ def journey_details(journey_id: str) -> IncidentDetails:
         return IncidentDetails(incident_id="", match_explanation="No incident on this journey.")
     if sit.mode == "simulated":  # fictitious incident: there is no internal KULT case to show
         return IncidentDetails(incident_id=sit.incident_id,
-                               match_explanation="Fictitious demo incident: no internal SBB details.")
-    return kult.incident_details(sit.incident_id, pd.Timestamp(sit.clock))
+                               match_explanation="Fictitious demo incident: no internal SBB details.",
+                               public_messages=_simulated_messages(sit))
+    at = pd.Timestamp(sit.clock)
+    details = kult.incident_details(sit.incident_id, at)
+    details.public_messages = replay.public_messages(sit.incident_id, at)
+    return details
 
 
 # ---------------------------------------------------------------------------
@@ -206,4 +211,83 @@ def incident_details(
     t = None
     if at is not None or minutes_since_start is not None:
         t = replay.resolve_time(incident_id, at, minutes_since_start)
-    return kult.incident_details(incident_id, t)
+    details = kult.incident_details(incident_id, t)
+    details.public_messages = replay.public_messages(incident_id, t)
+    return details
+
+
+# ---------------------------------------------------------------------------
+# Public messages of the simulated demo incident
+# ---------------------------------------------------------------------------
+
+_CLOCK_RE = re.compile(r"\b([01]?\d|2[0-3])[:h.]([0-5]\d)\b")
+
+
+def _simulated_messages(sit: Situation) -> list[PublicMessage]:
+    """Messages of a real incident on the same section, moved to the demo's times.
+
+    - The first real message is shown at the demo's first update; the others keep
+      their delay after it.
+    - The replacement-bus message only shows while the presenter runs buses (from
+      that update), the final message only once the line has reopened.
+    - Clock times in the texts move with their message; the announced end becomes
+      the one currently set in the demo.
+    """
+    scenario = DEMO_SCENARIOS.get(sit.journey_id)
+    if scenario is None or not scenario.messages_from:
+        return []
+    real_id = scenario.messages_from
+    try:
+        msgs = replay.public_messages(real_id)
+        h = estimator._history_indexed().loc[real_id]
+    except (FileNotFoundError, KeyError):
+        return []
+    if not msgs:
+        return []
+    real_end = h["real_end"].to_pydatetime() if pd.notna(h["real_end"]) else None
+    announced = h["announced_end_first"].to_pydatetime() if pd.notna(h["announced_end_first"]) else None
+    # move by wall-clock time (the real incident may be in summer time, the demo in winter time)
+    first = sit.updates[0].time if sit.updates else sit.clock
+    tz = first.tzinfo
+
+    def moved(t):
+        wall = first.replace(tzinfo=None) + (t.astimezone(tz).replace(tzinfo=None) - msgs[0].time.astimezone(tz).replace(tzinfo=None))
+        return wall.replace(tzinfo=tz)
+    buses_on = next((u.time for u in reversed(sit.updates) if u.text.startswith("Replacement buses now run")), None)
+
+    out: list[PublicMessage] = []
+    for m in msgs:
+        is_bus = "replacement bus" in m.title.lower()
+        is_final = real_end is not None and m.time >= real_end - pd.Timedelta(minutes=5)
+        if is_final:
+            if not sit.resumed_at:
+                continue
+            t = sit.resumed_at
+        elif is_bus:
+            if not sit.replacement_bus or buses_on is None:
+                continue
+            t = buses_on
+        else:
+            t = moved(m.time)
+        if t > sit.clock:
+            continue
+        # the machine translation of the first title is poor ("Uninterrupted ..." for "Unterbruch")
+        title = f"Interruption {sit.section}" if m is msgs[0] else m.title
+        out.append(m.model_copy(update={"time": t, "title": title,
+                                        "text": _move_times(m.text, m.time, t, announced, sit.official_end)}))
+    return sorted(out, key=lambda m: m.time)
+
+
+def _move_times(text: str, real_time, new_time, announced, official_end) -> str:
+    """Move the hh:mm in a message with it (the announced end becomes the demo's)."""
+    tz = new_time.tzinfo
+
+    def sub(match: re.Match) -> str:
+        hh, mm = int(match.group(1)), int(match.group(2))
+        local_real = real_time
+        if announced is not None and (hh, mm) == (announced.hour, announced.minute) and official_end is not None:
+            return official_end.astimezone(tz).strftime("%H:%M")
+        t_real = local_real.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        return (new_time + (t_real - local_real)).astimezone(tz).strftime("%H:%M")
+
+    return _CLOCK_RE.sub(sub, text)

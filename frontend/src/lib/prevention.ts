@@ -1,4 +1,4 @@
-// Small helpers for the prevention features (docs/prevention-frontend-handoff.md).
+// Small helpers for the prevention features (booked trips, bus delays, reliability).
 import type { Alternative, BusDelayForecast, PlannedTrip } from "../types";
 
 /** Our bus forecast (idea 4) is worth showing only when it sees more than SBB does. */

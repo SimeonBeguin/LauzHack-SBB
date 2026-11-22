@@ -1,24 +1,24 @@
 // "Personalize": three questions, then ONE best itinerary for this traveller.
 //
-// 1. Where can you get off?         -> how far from the destination the trip may end,
-//                                       and how the last bit is done (on foot / picked up)
-// 2. To save 20 min, you accept...  -> how much extra changes and waiting for the
-//                                       reopening "cost" this traveller
-// 3. You're travelling with...      -> hard limits (no bus with a bike, step-free for
-//                                       reduced mobility) and comfort weights
+// 1. Where can you get off?  -> how far from the destination the trip may end,
+//                                and how the last bit is done (on foot / picked up)
+// 2. What suits you best?    -> the weights of the formula below
+// 3. You're travelling with… -> hard limits (no bus with a bike, step-free for
+//                                reduced mobility) and the walking speed
 //
-// The algorithm turns every option into a cost in "equivalent minutes" and picks
-// the lowest:
+// Every option gets a cost in "equivalent minutes"; the lowest wins:
 //
-//   cost = expected arrival AT the destination (incl. the last walk / ride / pick-up)
-//        + changes x weight            (3 min if accepted, 25 min if not)
-//        + waiting for the reopening   (0 if accepted, 25 min if not)
-//        + comfort terms (buses, walking) depending on question 3
-//        + risk (reopening often later than announced, buses in traffic)
-//        + missed-deadline risk        ((1 - chance) x 60 min, if a deadline is set)
+//   cost = minutes until arrival at the final stop
+//        + P_change x number of changes
+//        + P_bus    x (1 if the trip uses a replacement bus)
+//        + P_risk   x minutes of uncertainty
 //
-// "Not accepted" weighs 25 min: more than the 20 min of the question, so an extra
-// change or waiting is only proposed when it saves clearly more than 20 minutes.
+// The last bit from the final stop to the destination (on foot / picked up) is
+// NOT added: question 1 only decides how far from the destination a trip may end.
+//
+// Uncertainty: waiting for the reopening = how much later than SBB's announced
+// time our estimate expects it (median); replacement bus = 10 min (traffic);
+// other routes = their usual road delay, if any.
 import type {
   Alternative, AlternativesResponse, DisruptionStatus, Preferences, StopChoice, TradeOff, TravelWith,
 } from "../types";
@@ -37,7 +37,7 @@ export interface Question<K extends keyof PersonalAnswers> {
 }
 
 export const WALK_MAX_KM = 2;
-export const PICKUP_MAX_KM = 25;
+export const PICKUP_MAX_KM = 10;
 const AT_DESTINATION_KM = 0.5; // same station area
 
 export const QUESTIONS: [Question<"stop">, Question<"tradeOff">, Question<"travelWith">] = [
@@ -52,12 +52,12 @@ export const QUESTIONS: [Question<"stop">, Question<"tradeOff">, Question<"trave
   },
   {
     key: "tradeOff",
-    title: "To save 20 min, you'd accept…",
+    title: "What suits you best?",
     options: [
-      { value: "anything", label: "Anything", icon: "check-plain" },
-      { value: "changes", label: "More changes", icon: "swap" },
-      { value: "wait", label: "Waiting for the line to reopen", icon: "history" },
-      { value: "simplest", label: "Nothing, keep it simple", icon: "ring" },
+      { value: "anything", label: "I accept anything", hint: "Changes, replacement buses: whatever is quickest", icon: "check-plain" },
+      { value: "changes", label: "Changes yes, buses no", icon: "swap" },
+      { value: "wait", label: "I'd rather wait", hint: "For the line to reopen", icon: "history" },
+      { value: "simplest", label: "The simplest way", icon: "ring" },
     ],
   },
   {
@@ -93,6 +93,8 @@ export function withAnswers(p: Preferences, a: PersonalAnswers): Preferences {
     luggage: a.travelWith === "luggage",
     stroller_bike: a.travelWith === "bike",
     few_transfers: a.tradeOff === "simplest" || a.tradeOff === "wait",
+    // replacement buses are weighed by the formula (P_bus), not filtered out
+    avoid_replacement_bus: false,
   };
 }
 
@@ -108,7 +110,7 @@ export function syncAnswers(p: Preferences): Preferences {
 
 export function answersSummary(a: PersonalAnswers): string {
   const stop = { exact: "at my destination", walk: "walk the rest", pickup: "picked up nearby" }[a.stop];
-  const trade = { anything: "anything to save time", changes: "more changes OK", wait: "waiting OK", simplest: "keep it simple" }[a.tradeOff];
+  const trade = { anything: "anything goes", changes: "changes yes, buses no", wait: "rather wait", simplest: "simplest way" }[a.tradeOff];
   const travel = { nothing: "", luggage: "luggage", bike: "bike", reduced_mobility: "reduced mobility" }[a.travelWith];
   return [stop, trade, travel].filter(Boolean).join(" · ");
 }
@@ -116,40 +118,29 @@ export function answersSummary(a: PersonalAnswers): string {
 // ---------------------------------------------------------------------------
 // The algorithm
 // ---------------------------------------------------------------------------
-const ACCEPTED_TRANSFER_MIN = 3;
-const REFUSED_MIN = 25; // > the 20 min of the question
-const PICKUP_WAIT_MIN = 10; // whoever picks you up needs a moment to get there
-const CAR_KMH = 40;
+/** Weights of question 2: P_change, P_bus, P_risk. */
+export const TRADE_OFF_WEIGHTS: Record<TradeOff, { change: number; bus: number; risk: number }> = {
+  anything: { change: 2, bus: 5, risk: 1 },
+  changes: { change: 5, bus: 60, risk: 1 },
+  wait: { change: 10, bus: 60, risk: 0.3 },
+  simplest: { change: 20, bus: 60, risk: 0.5 },
+};
+/** Last bit of the trip, for the info line only (not in the cost): speed in km/h. */
+export const CAR_KMH = 40; // picked up: car minutes only, no fixed waiting time
+export const WALK_KMH: Record<TravelWith, number> = { nothing: 4.5, luggage: 3.5, bike: 15, reduced_mobility: 3 };
+const REPLACEMENT_BUS_UNCERTAINTY_MIN = 10;
 
 interface Weights {
-  transfer: number; wait: number; bus: number; replacement: number; walk: number;
+  change: number; bus: number; risk: number;
   lastMileKmh: number; walkMaxKm: number;
 }
 
 function weights(a: PersonalAnswers): Weights {
-  const acceptsChanges = a.tradeOff === "anything" || a.tradeOff === "changes";
-  const acceptsWait = a.tradeOff === "anything" || a.tradeOff === "wait";
-  const w: Weights = {
-    transfer: acceptsChanges ? ACCEPTED_TRANSFER_MIN : REFUSED_MIN,
-    wait: acceptsWait ? 0 : REFUSED_MIN,
-    bus: a.tradeOff === "simplest" ? 8 : 0,
-    replacement: a.tradeOff === "simplest" ? 15 : 5,
-    walk: a.tradeOff === "simplest" ? 0.5 : 0,
-    lastMileKmh: 4.5,
-    walkMaxKm: WALK_MAX_KM,
+  return {
+    ...TRADE_OFF_WEIGHTS[a.tradeOff],
+    lastMileKmh: WALK_KMH[a.travelWith],
+    walkMaxKm: a.travelWith === "reduced_mobility" ? 1 : WALK_MAX_KM,
   };
-  switch (a.travelWith) {
-    case "luggage":
-      w.transfer += 8; w.bus += 10; w.replacement += 10; w.walk += 0.5; w.lastMileKmh = 3.5;
-      break;
-    case "bike":
-      w.transfer += 8; w.lastMileKmh = 15; // rides the last bit
-      break;
-    case "reduced_mobility":
-      w.transfer += 15; w.bus += 10; w.replacement += 20; w.walk += 2; w.lastMileKmh = 3; w.walkMaxKm = 1;
-      break;
-  }
-  return w;
 }
 
 export interface LastMile { mode: "walk" | "bike" | "pickup"; km: number; minutes: number }
@@ -176,8 +167,6 @@ export interface PersonalPick {
 const BUS_MODES = new Set(["bus"]);
 const isWaitOption = (a: Alternative) => a.category === "wait" || !!a.uses_blocked_line;
 const rides = (a: Alternative) => a.legs.filter((l) => l.mode !== "walk" && l.mode !== "wait");
-const walkMinutes = (a: Alternative) =>
-  a.legs.filter((l) => l.mode === "walk").reduce((s, l) => s + Math.max(0, minutesBetween(l.departure, l.arrival)), 0);
 const signature = (a: Alternative) =>
   a.legs.map((l) => `${l.mode}|${l.line ?? ""}|${l.from_stop.id}|${l.to_stop.id}|${l.departure}`).join(">");
 
@@ -194,11 +183,18 @@ export function uniqueOptions(res: AlternativesResponse): Alternative[] {
   });
 }
 
-function lastMileOf(a: Alternative, ans: PersonalAnswers, w: Weights, maxKm: number): { lm: LastMile | null; conflict: string | null } {
+function lastMileOf(
+  a: Alternative, ans: PersonalAnswers, w: Weights, maxKm: number, destinationId: string | null,
+): { lm: LastMile | null; conflict: string | null } {
   const km = a.distance_to_destination_km ?? 0;
-  if (km <= AT_DESTINATION_KM) return { lm: null, conflict: null };
   const tooFar = `Ends ${km.toFixed(1)} km from your destination`;
-  if (ans.stop === "exact" || km > maxKm) return { lm: null, conflict: tooFar };
+  // "Right at my destination": only trips ending at the destination station itself
+  if (ans.stop === "exact") {
+    const atDestination = destinationId ? a.final_stop.id === destinationId : km === 0;
+    return { lm: null, conflict: atDestination ? null : tooFar };
+  }
+  if (km <= AT_DESTINATION_KM) return { lm: null, conflict: null };
+  if (km > maxKm) return { lm: null, conflict: tooFar };
   const self: LastMile = {
     mode: ans.travelWith === "bike" ? "bike" : "walk", km,
     minutes: Math.round((km / w.lastMileKmh) * 60),
@@ -206,13 +202,12 @@ function lastMileOf(a: Alternative, ans: PersonalAnswers, w: Weights, maxKm: num
   if (ans.stop === "walk") {
     return km <= w.walkMaxKm ? { lm: self, conflict: null } : { lm: null, conflict: tooFar };
   }
-  // picked up: unless walking is quicker for a short distance
-  const car: LastMile = { mode: "pickup", km, minutes: PICKUP_WAIT_MIN + Math.round((km / CAR_KMH) * 60) };
-  return { lm: km <= w.walkMaxKm && self.minutes <= car.minutes ? self : car, conflict: null };
+  // picked up: car minutes only
+  return { lm: { mode: "pickup", km, minutes: Math.round((km / CAR_KMH) * 60) }, conflict: null };
 }
 
-/** Extra minutes to expect on top of the timetable. */
-function riskMinutes(a: Alternative, status: DisruptionStatus | null): number {
+/** Minutes of uncertainty on top of the timetable. */
+function uncertaintyMinutes(a: Alternative, status: DisruptionStatus | null): number {
   if (isWaitOption(a)) {
     const e = status?.estimate;
     // the reopening is often later than announced: use our median estimate
@@ -221,36 +216,34 @@ function riskMinutes(a: Alternative, status: DisruptionStatus | null): number {
     return 15;
   }
   // reliability gauge (Prevention): usual delay from road traffic at that hour
-  if (a.reliability) return a.reliability.expected_delay_minutes;
-  const road = Math.max(0, ...a.legs.map((l) => l.road_delay_minutes ?? 0));
-  const base = a.certainty === "uncertain" ? 10 : a.certainty === "likely" ? 4 : 0;
-  return base + road;
+  const road = a.reliability ? a.reliability.expected_delay_minutes
+    : Math.max(0, ...a.legs.map((l) => l.road_delay_minutes ?? 0));
+  const replacement = a.legs.some((l) => l.mode === "replacement_bus") ? REPLACEMENT_BUS_UNCERTAINTY_MIN : 0;
+  return replacement + road;
 }
 
 export function score(a: Alternative, ans: PersonalAnswers, p: Preferences, status: DisruptionStatus | null): Scored {
   const w = weights(ans);
   const maxKm = ans.stop === "exact" ? AT_DESTINATION_KM : Math.max(AT_DESTINATION_KM, p.destination_radius_km);
-  const { lm, conflict: stopConflict } = lastMileOf(a, ans, w, maxKm);
+  const { lm, conflict: stopConflict } = lastMileOf(a, ans, w, maxKm, status?.journey?.destination.id ?? null);
   const legs = rides(a);
   const buses = legs.filter((l) => BUS_MODES.has(l.mode)).length;
-  const replacement = legs.filter((l) => l.mode === "replacement_bus").length;
+  const replacement = legs.some((l) => l.mode === "replacement_bus");
 
   let conflict = stopConflict;
-  if (!conflict && ans.travelWith === "bike" && buses + replacement > 0) conflict = "Bikes are not taken on buses";
+  if (!conflict && ans.travelWith === "bike" && (buses > 0 || replacement)) conflict = "Bikes are not taken on buses";
   if (!conflict && ans.travelWith === "reduced_mobility" && a.accessible === false) conflict = "Not step-free";
   if (!conflict && a.disabled_reason) conflict = a.disabled_reason;
 
   const wait = isWaitOption(a);
-  const risk = riskMinutes(a, status);
-  const expectedArrival = new Date(a.arrival).getTime() + ((lm?.minutes ?? 0) + risk) * 60_000;
+  const uncertainty = uncertaintyMinutes(a, status);
+  const now = status?.estimate?.as_of ?? status?.last_update ?? a.departure ?? a.arrival;
 
-  let cost = expectedArrival / 60_000;
-  cost += a.transfers * w.transfer;
-  cost += wait ? w.wait : 0;
-  cost += buses * w.bus + replacement * w.replacement;
-  cost += walkMinutes(a) * w.walk;
-  if (p.deadline && a.on_time_probability != null) cost += (1 - a.on_time_probability) * 60;
-  if (ans.travelWith === "luggage" && a.accessible === false) cost += 15;
+  const cost = minutesBetween(now, a.arrival)
+    + w.change * a.transfers
+    + w.bus * (replacement ? 1 : 0)
+    + w.risk * uncertainty;
+  const expectedArrival = new Date(a.arrival).getTime() + uncertainty * 60_000;
 
   return { alt: a, cost, expectedArrival, lastMile: lm, isWait: wait, feasible: !conflict, conflict };
 }
@@ -280,7 +273,7 @@ export function personalPick(
     alt: chosen.alt,
     reasons: reasonsFor(chosen, ans, simpleSame, fastest, feasible),
     compromise: chosen.feasible ? null : `No option fits all your answers. Closest one: ${chosen.conflict?.toLowerCase()}.`,
-    arrivalAtDestination: new Date(new Date(chosen.alt.arrival).getTime() + (chosen.lastMile?.minutes ?? 0) * 60_000).toISOString(),
+    arrivalAtDestination: chosen.alt.arrival,
     lastMile: chosen.lastMile,
   };
 }

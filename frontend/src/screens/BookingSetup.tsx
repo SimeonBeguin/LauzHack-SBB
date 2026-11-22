@@ -1,5 +1,5 @@
 // Prevention, idea 2: register a trip paid in advance (e.g. a Supersaver ticket,
-// bound to its trains). From 24 h before departure until arrival the backend
+// bound to its trains). From 3 h before departure until arrival the backend
 // checks every change and warns before one is missed.
 import { useState } from "react";
 import { addBooking, USER_ID } from "../api/client";
@@ -53,7 +53,7 @@ export default function BookingSetup() {
       <Header title="Booked trip" onBack={back} />
       <div className="content overlap">
         <p className="intro-card card">
-          Already bought your ticket? We check your connections from 24 hours before departure,
+          Already bought your ticket? We check your connections from 3 hours before departure,
           and warn you before you miss a change, even before the delay shows on the departure boards.
         </p>
         <section className="card form">

@@ -152,20 +152,6 @@ def leg_uses_section(leg: OJPLeg, section: BlockedSection) -> bool:
     return len(section_calls(leg, section)) >= 2
 
 
-def leg_is_blocked(leg: OJPLeg, ctx: DisruptionContext) -> bool:
-    calls = section_calls(leg, ctx.section)
-    if len(calls) < 2:
-        return False
-    # time the train enters / leaves the section
-    t_in = calls[0].time or leg.departure
-    t_out = calls[-1].arrival or calls[-1].time or leg.arrival
-    return ctx.is_closed_at(t_in) or ctx.is_closed_at(t_out) or (t_in < ctx.start < t_out)
-
-
-def trip_is_blocked(trip: OJPTrip, ctx: DisruptionContext) -> bool:
-    return any(leg_is_blocked(leg, ctx) for leg in trip.legs)
-
-
 def trip_uses_section(trip: OJPTrip, section: BlockedSection) -> bool:
     return any(leg_uses_section(leg, section) for leg in trip.legs)
 
@@ -274,6 +260,8 @@ class DemoScenario:
     official_duration: timedelta  # SBB announced end = start + this
     reason_id: str = "EG_010"  # cause code for the estimate (EG_010 = infrastructure fault)
     checked_before_departure: timedelta = timedelta(minutes=10)  # "now" of the scenario
+    # real incident on the same section whose public messages are shown, moved to the demo's times
+    messages_from: str | None = None
 
     def start(self, journey: Journey) -> datetime:
         return journey.departure - self.starts_before_departure
@@ -289,6 +277,7 @@ DEMO_SCENARIOS: dict[str, DemoScenario] = {
     # Weekday ~17:30 return commute Zürich HB -> Hinwil, S14 interrupted Uster - Wetzikon ZH
     "demo-zh": DemoScenario(
         incident_id=DEMO_ZH_INCIDENT_ID,
+        messages_from="2195004514622",  # real interruption Uster - Wetzikon ZH, 11.06.2024
         section_from="8503125",  # Uster
         section_to="8503123",  # Wetzikon ZH
         detour_via_ids=["8503110"],  # Rapperswil (S7 / S5 around the lake, then S15/S5 to Wetzikon)

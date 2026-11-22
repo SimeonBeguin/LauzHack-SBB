@@ -48,22 +48,8 @@ export interface DisruptionStatus {
   changes?: string[];               // (UI) what changed since the previous version
 }
 
-export interface TimelinePoint {
-  time: string; title: string; kind: string; duration_type: string | null;
-  official_end: string | null; estimate: ReopeningEstimate; what_changed: string;
-}
-
-export interface IncidentTimeline {
-  incident_id: string; title: string; reason: string | null; affected_section: string | null;
-  start: string; real_end: string | null; points: TimelinePoint[];
-}
-
-export interface DepartureRisk {
-  incident_id: string; departure: string; as_of: string;
-  probability_still_disrupted: number; similar_incidents_count: number; explanation: string;
-}
-
 export interface InternalMessage { time: string; text: string }
+export interface PublicMessage { time: string; title: string; text: string }
 
 export interface IncidentDetails {
   incident_id: string;
@@ -79,6 +65,7 @@ export interface IncidentDetails {
   ticket_goodwill: string[];
   internal_messages: InternalMessage[];
   internal_lead_minutes: number | null;
+  public_messages?: PublicMessage[];
 }
 
 export interface Preferences {
@@ -161,7 +148,7 @@ export interface CommuterTrip {
 }
 
 export type NotificationKind =
-  | "earlier_train" | "own_train" | "resolved"  // commuter alerts
+  | "line_disrupted" | "earlier_train" | "own_train" | "resolved"  // commuter alerts
   | "booked_train_disrupted" | "connection_broken" | "connection_at_risk" | "booking_back_to_normal"; // booked trips
 
 export interface Notification {

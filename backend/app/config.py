@@ -14,7 +14,6 @@ class Settings(BaseSettings):
     ojp_api_key: str = ""
     ojp_endpoint: str = "https://api.opentransportdata.swiss/ojp20"
     tomtom_api_key: str = ""
-    here_api_key: str = ""
     data_dir: Path = REPO_ROOT / "Daten"
 
     # Routing (workstream B)

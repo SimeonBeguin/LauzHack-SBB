@@ -132,7 +132,7 @@ def test_booking_alert_when_traffic_breaks_the_change(monkeypatch):
     monkeypatch.setattr(bookings, "_disruption", lambda *a: None)
     monkeypatch.setattr(bus_delay, "road_time", lambda *a, **k: None)
     monkeypatch.setattr(reliability, "road_time", lambda *a, **k: None)
-    bookings.reset_alerts()
+    bookings.clear()
     b = bookings.book(BookedTrip(user_id="u-prev", origin_stop_id="S0", destination_stop_id="Z", departure=m(0)),
                       client)
     assert b.legs and b.arrival == m(60)

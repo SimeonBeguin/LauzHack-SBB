@@ -6,14 +6,6 @@ import type { Preferences } from "../types";
 import { BottomSheet, Chip } from "../components/ui";
 import { syncAnswers } from "../lib/personalize";
 
-export function preferencesSummary(p: Preferences): string {
-  const parts: string[] = [];
-  if (p.avoid_replacement_bus) parts.push("no replacement bus");
-  if (p.accessible_only) parts.push("step-free");
-  parts.push(`up to ${p.destination_radius_km} km away`);
-  return parts.join(", ");
-}
-
 export default function PersonaliseSheet() {
   const { prefs, setPrefs, sheetOpen, setSheetOpen, showToast } = useStore();
   const [draft, setDraft] = useState<Preferences>(prefs);

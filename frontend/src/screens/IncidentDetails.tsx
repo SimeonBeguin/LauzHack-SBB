@@ -48,6 +48,20 @@ export default function IncidentDetails() {
 
         <HowLongCard status={status} now={clock} />
 
+        {!!d?.public_messages?.length && (
+          <section className="card detail">
+            <h3><Icon name="info" size={18} />SBB messages</h3>
+            <ul className="sbb-messages">
+              {[...d.public_messages].reverse().map((m) => (
+                <li key={`${m.time}-${m.title}`}>
+                  <b>{hhmm(m.time)} · {m.title}</b>
+                  <p>{m.text}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         {d?.found && (
           <>
             <Section title="SBB recommends" items={d.travel_recommendations} />

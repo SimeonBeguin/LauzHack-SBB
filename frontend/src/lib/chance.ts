@@ -6,7 +6,13 @@ import { minutesBetween } from "./format";
 
 export type Tone = "good" | "ok" | "bad";
 
-export interface ChanceLabel { word: string; tone: Tone; freq: string }
+export interface ChanceLabel {
+  word: string; tone: Tone; freq: string;
+  /** the probability behind the word, in % (shown next to it) */
+  percent: number | null;
+}
+
+const pct = (p: number) => Math.round(Math.min(1, Math.max(0, p)) * 100);
 
 export function inTen(p: number): string {
   if (p < 0.05) return "less than 1 in 10";
@@ -16,25 +22,30 @@ export function inTen(p: number): string {
 
 export function chanceLabel(p: number): ChanceLabel {
   const freq = inTen(p);
-  if (p >= 0.9) return { word: "Almost certain", tone: "good", freq };
-  if (p >= 0.7) return { word: "Very likely", tone: "good", freq };
-  if (p >= 0.5) return { word: "Likely", tone: "ok", freq };
-  if (p >= 0.3) return { word: "Uncertain", tone: "ok", freq };
-  if (p >= 0.1) return { word: "Unlikely", tone: "bad", freq };
-  return { word: "Very unlikely", tone: "bad", freq };
+  const percent = pct(p);
+  if (p >= 0.9) return { word: "Almost certain", tone: "good", freq, percent };
+  if (p >= 0.7) return { word: "Very likely", tone: "good", freq, percent };
+  if (p >= 0.5) return { word: "Likely", tone: "ok", freq, percent };
+  if (p >= 0.3) return { word: "Uncertain", tone: "ok", freq, percent };
+  if (p >= 0.1) return { word: "Unlikely", tone: "bad", freq, percent };
+  return { word: "Very unlikely", tone: "bad", freq, percent };
 }
+
+/** Chance an option runs as planned, by certainty (also the base of onTimeChance). */
+const BASE: Record<Certainty, number> = { safe: 0.95, likely: 0.85, uncertain: 0.6 };
 
 /** Without a deadline: how reliable the option is. */
 export const RELIABILITY: Record<Certainty, ChanceLabel> = {
-  safe: { word: "Reliable", tone: "good", freq: "" },
-  likely: { word: "Probably fine", tone: "ok", freq: "" },
-  uncertain: { word: "Uncertain", tone: "bad", freq: "" },
+  safe: { word: "Reliable", tone: "good", freq: "", percent: pct(BASE.safe) },
+  likely: { word: "Probably fine", tone: "ok", freq: "", percent: pct(BASE.likely) },
+  uncertain: { word: "Uncertain", tone: "bad", freq: "", percent: pct(BASE.uncertain) },
 };
 
 /** Reliability gauge (Prevention, idea 3): the backend word with our colour. */
 const LEVEL_TONE: Record<ReliabilityLevel, Tone> = { good: "good", fair: "ok", low: "bad" };
 export function reliabilityLabel(r: TripReliability): ChanceLabel {
-  return { word: r.label, tone: LEVEL_TONE[r.level], freq: "" };
+  const p = r.on_time_probability ?? 1 - r.probability_late_5min;
+  return { word: r.label, tone: LEVEL_TONE[r.level], freq: "", percent: pct(p) };
 }
 
 /** The gauge applies to routes that run normally; "wait" options depend on the reopening instead. */
@@ -47,7 +58,6 @@ export function reasonFor(a: Pick<Alternative, "reliability" | "uses_blocked_lin
   return gaugeOf(a)?.reason ?? a.certainty_reason ?? null;
 }
 
-const BASE: Record<Certainty, number> = { safe: 0.95, likely: 0.85, uncertain: 0.6 };
 
 /** Chance the line has reopened before `t`, interpolated on the estimate curve. */
 export function reopenedBefore(points: EndProbability[], now: string, t: string): number {

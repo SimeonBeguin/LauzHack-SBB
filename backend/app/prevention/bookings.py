@@ -1,7 +1,7 @@
 """Idea 2: watch trips paid in advance and warn before a connection is lost.
 
 A traveller registers a booked trip (e.g. a Supersaver ticket, bound to its
-trains). From 24 h before departure until arrival, each check:
+trains). From 3 h before departure until arrival, each check:
 
 1. finds the booked connection again in OJP (real-time times, cancellations);
 2. checks it against the live incidents (app/situation.py): does it run through
@@ -44,7 +44,7 @@ from app.routing.ojp_client import OJPClient, OJPError, OJPTrip, to_model_leg
 log = logging.getLogger(__name__)
 
 TZ = ZoneInfo("Europe/Zurich")
-WATCH_BEFORE = timedelta(hours=24)
+WATCH_BEFORE = timedelta(hours=3)
 P_AT_RISK = 0.3        # chance to miss a change: "at risk"
 P_DISRUPTED = 0.2      # chance the blocked line is still closed when the train gets there
 FORECAST_RESIDUAL_DELAY = 1.0  # min: uncertainty left once a bus leg has a live forecast
@@ -83,16 +83,18 @@ def get_booking(booking_id: str) -> BookedTrip | None:
     return _BOOKINGS.get(booking_id)
 
 
+def clear() -> None:
+    """Forget every booked trip and its alerts (the presenter resets the demo)."""
+    with _LOCK:
+        _BOOKINGS.clear()
+        _ALERTS.clear()
+        _LAST.clear()
+
+
 def remove(booking_id: str) -> None:
     with _LOCK:
         _BOOKINGS.pop(booking_id, None)
         _LAST.pop(booking_id, None)
-
-
-def reset_alerts() -> None:
-    with _LOCK:
-        _ALERTS.clear()
-        _LAST.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +165,7 @@ def check(booking: BookedTrip, now: datetime | None = None, client: OJPClient | 
     status = BookingStatus(booking=booking, as_of=now, state="ok", summary="Your connections look fine.")
     if not (booking.departure - WATCH_BEFORE <= now <= arrival):
         status.state = "not_watched"
-        status.summary = ("We start checking 24 h before departure." if now < booking.departure
+        status.summary = ("We start checking 3 h before departure." if now < booking.departure
                           else "This trip is over.")
         return status, None, None
 

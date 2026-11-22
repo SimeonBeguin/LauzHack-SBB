@@ -8,6 +8,7 @@ import { useStore } from "../store";
 import { JOURNEY_ID } from "../api/client";
 import { atTime, hhmm, swissDay } from "../lib/format";
 import { enableOsNotifications, osNotificationsSupported } from "../lib/osNotifications";
+import { COPPET_STEPS } from "./coppetScenario";
 
 export default function DemoPanel({ onClose }: { onClose: () => void }) {
   const s = useStore();
@@ -96,7 +97,7 @@ export default function DemoPanel({ onClose }: { onClose: () => void }) {
             <div className="demo-row">
               <button onClick={() => s.reset({ name: "home" })}>Show app</button>
               <button onClick={() => s.reset({ name: "disruption" })}>Open “Need help”</button>
-              <button onClick={() => { s.setSheetOpen(false); void s.act({ action: "reset" }); }}>Reset the demo</button>
+              <button onClick={() => { s.setSheetOpen(false); s.clearDemoAlerts(); void s.act({ action: "reset" }); }}>Reset the demo</button>
             </div>
           </section>
 
@@ -117,6 +118,20 @@ export default function DemoPanel({ onClose }: { onClose: () => void }) {
               ))}
             </div>
             <p className="demo-update">Simulated on every bus leg; works without a TomTom key. SBB’s real-time data does not show it.</p>
+          </section>
+
+          <section>
+            <h3>Staged alerts: Coppet → Lausanne, 08:19</h3>
+            <p className="demo-update">
+              Hand-written notifications for the regular morning trip (RE33), after the real incident
+              Gland – Nyon of 5 March 2025. Each button shows one like a real alert.
+            </p>
+            <div className="demo-row">
+              {COPPET_STEPS.map((st) => (
+                <button key={st.id} onClick={() => s.showDemoAlert(st.build(swissDay(sit.clock)))}>{st.button}</button>
+              ))}
+              <button onClick={s.clearDemoAlerts}>Clear</button>
+            </div>
           </section>
 
           <section>

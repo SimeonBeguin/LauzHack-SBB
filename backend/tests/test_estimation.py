@@ -41,16 +41,6 @@ def test_history_matches_known_figures():
     assert 0.6 <= (u["first_announced_error_min"] > 0).mean() <= 0.75
 
 
-def test_similar_incidents_fallback():
-    from app.estimation import features
-
-    h = features.build_incident_history()
-    sim = features.similar_incidents(h, "EG_047", kind="interruption")
-    assert len(sim) >= 15 and (sim["reason_id"] == "EG_047").all()
-    rare = features.similar_incidents(h, "EG_166")
-    assert rare.attrs["level"] in ("cause_group", "all")
-
-
 def test_estimate_contains_official_time_and_never_before_now():
     from app.estimation import estimator
 

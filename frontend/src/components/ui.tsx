@@ -2,7 +2,7 @@
 // light title, white rounded cards overlapping it, connection lines with dots,
 // grey pill rows with a chevron, red pill buttons.
 import type { ReactNode } from "react";
-import type { Alternative, Certainty, Leg } from "../types";
+import type { Alternative, Leg } from "../types";
 import { durationLabel, hhmm, minutesBetween } from "../lib/format";
 import { chanceLabel, gaugeOf, RELIABILITY, reliabilityLabel, type ChanceLabel } from "../lib/chance";
 
@@ -104,14 +104,6 @@ export function LineBadge({ line, mode }: { line: string | null; mode?: string }
   return <span className={`line-badge lb-${kind}`}>{label}</span>;
 }
 
-export function LineBadges({ legs }: { legs: Leg[] }) {
-  return (
-    <span className="line-badges">
-      {legs.filter((l) => l.mode !== "wait" && l.mode !== "walk").map((l, i) => <LineBadge key={i} line={l.line} mode={l.mode} />)}
-    </span>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Timeline row: 17:15 ●──────○──────● 18:40 (hollow dots = changes)
 // ---------------------------------------------------------------------------
@@ -157,7 +149,8 @@ export function ChanceBadge({ label, suffix, big }: { label: ChanceLabel | null;
       <span className="chance-dot" aria-hidden="true" />
       <span>
         <strong>{label.word}{suffix ? ` ${suffix}` : ""}</strong>
-        {label.freq && <span className="chance-freq"> · {label.freq}</span>}
+        {label.percent != null ? <span className="chance-pct"> · {label.percent}%</span>
+          : label.freq && <span className="chance-freq"> · {label.freq}</span>}
       </span>
     </span>
   );
@@ -171,12 +164,9 @@ export function ChanceTab({ label, prefix }: { label: ChanceLabel | null; prefix
       <span className="chance-dot" aria-hidden="true" />
       {prefix && <span className="corner-small">{prefix}</span>}
       <strong>{label.word}</strong>
+      {label.percent != null && <span className="corner-small chance-pct">{label.percent}%</span>}
     </span>
   );
-}
-
-export function CertaintyBadge({ certainty }: { certainty?: Certainty | null }) {
-  return certainty ? <ChanceBadge label={RELIABILITY[certainty]} /> : null;
 }
 
 // ---------------------------------------------------------------------------

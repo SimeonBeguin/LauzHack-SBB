@@ -152,10 +152,10 @@ export default function ConnectionDetail({ id }: { id: string }) {
           <PillRow icon="walk">{a.distance_to_destination_km} km to {j?.destination.name ?? "your destination"}</PillRow>
         )}
         {a.ticket_hint && <p className="ticket-line"><Icon name="ticket" size={18} /> {a.ticket_hint}</p>}
+        <button className="cta" onClick={() => { setSaved(true); showToast("Saved. We'll tell you if anything changes."); }}>
+          {a.ticket_valid === false ? "Tickets for the last part" : "Your ticket is valid · Save"}
+        </button>
       </div>
-      <button className="cta" onClick={() => { setSaved(true); showToast("Saved. We'll tell you if anything changes."); }}>
-        {a.ticket_valid === false ? "Tickets for the last part" : "Your ticket is valid · Save"}
-      </button>
     </>
   );
 }

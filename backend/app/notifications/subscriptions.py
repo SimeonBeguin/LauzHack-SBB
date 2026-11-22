@@ -19,3 +19,8 @@ def list_trips(user_id: str | None = None) -> list[CommuterTrip]:
 
 def remove_trip(trip_id: str) -> None:
     _TRIPS.pop(trip_id, None)
+
+
+def clear() -> None:
+    """Forget every registered trip (the presenter resets the demo)."""
+    _TRIPS.clear()

@@ -8,11 +8,11 @@
 import { useEffect, useRef } from "react";
 import { useStore } from "../store";
 import type { Alternative, DisruptionStatus, Journey } from "../types";
-import { durationLabel, hhmm, minutesBetween } from "../lib/format";
+import { hhmm } from "../lib/format";
 import { rankedOptions } from "../lib/ranking";
-import { gaugeOf, reasonFor } from "../lib/chance";
-import { ChanceBadge, ConnectionCard, Header, Icon, labelFor, LineBadge, PillRow } from "../components/ui";
-import { answersOf, answersSummary, personalPick, type PersonalPick } from "../lib/personalize";
+import { Header, Icon, LineBadge, PillRow } from "../components/ui";
+import AdviceCard from "../components/AdviceCard";
+import { answersOf, answersSummary, personalPick } from "../lib/personalize";
 import { focusBestOption } from "./Personalize";
 
 function JourneySummary({ j, status, onDetails }: { j: Journey; status: DisruptionStatus; onDetails: () => void }) {
@@ -27,38 +27,12 @@ function JourneySummary({ j, status, onDetails }: { j: Journey; status: Disrupti
         <strong>{hhmm(j.arrival)}</strong>
       </div>
       <p className={resolved ? "summary-sub" : "summary-sub red"}>
-        Today, {durationLabel(minutesBetween(j.departure, j.arrival))} · {resolved ? "running again" : "this train does not run"}
+        {resolved ? "Running again" : "This train does not run"}
       </p>
       <button className="btn btn-secondary details-btn" onClick={onDetails}>
         Details <Icon name="chevron" size={16} />
       </button>
     </section>
-  );
-}
-
-function Advice({ alt, deadline, onOpen, pick }: {
-  alt: Alternative; deadline: string | null; onOpen: () => void; pick?: PersonalPick | null;
-}) {
-  const late = deadline && alt.on_time_probability != null && alt.on_time_probability < 0.3;
-  return (
-    <ConnectionCard alt={alt} deadline={deadline} onOpen={onOpen} highlight noTab>
-      <span className="advice-extra">
-        <ChanceBadge big label={labelFor(alt)} suffix={deadline ? `to arrive by ${hhmm(deadline)}` : undefined} />
-        {pick ? (
-          <span className="pz-reasons">
-            {gaugeOf(alt) && gaugeOf(alt)!.level !== "good" && <span className="muted">{gaugeOf(alt)!.reason}</span>}
-            {pick.lastMile && (
-              <span className="pz-arrive">At your destination around <b>{hhmm(pick.arrivalAtDestination)}</b></span>
-            )}
-            {pick.reasons.map((r) => <span key={r} className="pz-reason"><Icon name="check-plain" size={16} />{r}</span>)}
-            {pick.compromise && <span className="warn-line">{pick.compromise}</span>}
-          </span>
-        ) : (
-          reasonFor(alt) && <span className="muted">{reasonFor(alt)}</span>
-        )}
-        {late && <span className="warn-line">No option gets you there by {hhmm(deadline)}. This is the earliest you can arrive.</span>}
-      </span>
-    </ConnectionCard>
   );
 }
 
@@ -92,7 +66,7 @@ export default function DisruptionMode() {
         {advice && (
           <>
             <h2 className="section-title pz-anchor" ref={bestRef}>{pick ? "Best for you" : "Our advice"}</h2>
-            <Advice alt={advice} deadline={prefs.deadline} onOpen={() => open(advice)} pick={pick} />
+            <AdviceCard alt={advice} deadline={prefs.deadline} onOpen={() => open(advice)} pick={pick} />
           </>
         )}
 

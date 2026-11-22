@@ -155,11 +155,6 @@ def _load_incident_audit(data_dir: Path | None) -> pd.DataFrame:
     return _clean_incident_table(df)
 
 
-def load_incident_audit(data_dir: Path | None = None) -> pd.DataFrame:
-    """Earlier versions of each incident (copied by a DB trigger before each UPDATE)."""
-    return _load_incident_audit(data_dir).copy()
-
-
 @lru_cache(maxsize=None)
 def _load_incident_versions(data_dir: Path | None) -> pd.DataFrame:
     audit = _load_incident_audit(data_dir).assign(is_current=False)
@@ -309,18 +304,3 @@ def load_via_reports(data_dir: Path | None = None) -> pd.DataFrame:
     Split `stoerungs_liniennummer` with `.str.split(r",\\s*")` to get line names.
     """
     return _load_via_reports(data_dir).copy()
-
-
-def clear_cache() -> None:
-    """Forget cached data (e.g. after replacing files in Daten/)."""
-    for fn in (
-        _load_incidents,
-        _load_incident_audit,
-        _load_incident_versions,
-        _load_reasons,
-        _load_messages,
-        _load_message_audit,
-        _load_intern_ticker,
-        _load_via_reports,
-    ):
-        fn.cache_clear()

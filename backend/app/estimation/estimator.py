@@ -428,18 +428,3 @@ def departure_risk(
             + (f" Based on {n} similar past incidents." if n else "")
         ),
     )
-
-
-def replay_times(incident_id: str) -> list[pd.Timestamp]:
-    """Moments worth replaying: every published version, then the end."""
-    snaps = _snapshots_by_incident().get(incident_id)
-    h = _history_indexed().loc[incident_id]
-    times = [] if snaps is None else list(snaps["t"])
-    if pd.notna(h["real_end"]):
-        times.append(h["real_end"])
-    return times
-
-
-def clear_cache() -> None:
-    for fn in (_history_indexed, _snapshots_by_incident, _candidates):
-        fn.cache_clear()

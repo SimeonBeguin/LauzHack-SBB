@@ -6,6 +6,7 @@ import type { BusDelayForecast, ConnectionCheck } from "../types";
 import { hhmm } from "../lib/format";
 import { ConnectionCard, Header, Icon, SectionTitle, TimeLine } from "../components/ui";
 import { forecastText, usefulForecast } from "../lib/prevention";
+import AdviceCard from "../components/AdviceCard";
 
 const CHECK_WORD: Record<ConnectionCheck["status"], string> = {
   ok: "Fine", at_risk: "Tight", broken: "You will probably miss it",
@@ -75,8 +76,8 @@ export default function BookingAlertScreen({ id }: { id: string }) {
 
         {advice && (
           <>
-            <SectionTitle>Our advice</SectionTitle>
-            <ConnectionCard alt={advice} deadline={null} highlight onOpen={() => open(advice.id)} />
+            <h2 className="section-title">Our advice</h2>
+            <AdviceCard alt={advice} deadline={null} onOpen={() => open(advice.id)} />
           </>
         )}
         {others.length > 0 && (

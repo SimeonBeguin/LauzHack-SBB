@@ -69,27 +69,6 @@ export function rankedOptions(res: AlternativesResponse, p: Preferences): Altern
   });
 }
 
-/**
- * The few options worth showing next to our advice: the best one of each kind
- * (another route, getting off nearby, waiting), so "wait" is always compared.
- */
-export function otherOptions(res: AlternativesResponse, p: Preferences, advice: Alternative | null, max = 3): Alternative[] {
-  const ranked = rankedOptions(res, p);
-  const picked: Alternative[] = [];
-  for (const list of Object.values(res.by_category)) {
-    const best = list.find((a) => !a.disabled_reason && a.title !== advice?.title && !picked.some((x) => x.title === a.title));
-    if (best) picked.push(best);
-  }
-  const order = (a: Alternative) => ranked.findIndex((r) => r.title === a.title);
-  const out = picked.sort((a, b) => order(a) - order(b)).slice(0, max);
-  // While SBB runs replacement buses, always show that option (greyed out with
-  // the reason when the traveller chose to avoid buses).
-  const isBus = (a: Alternative) => a.legs.some((l) => l.mode === "replacement_bus");
-  const bus = Object.values(res.by_category).flat().find(isBus);
-  if (bus && !out.some(isBus) && !(advice && isBus(advice))) out.push(bus);
-  return out;
-}
-
 export function pickAdvice(res: AlternativesResponse, p: Preferences): Alternative | null {
   return rankedOptions(res, p)[0] ?? null;
 }

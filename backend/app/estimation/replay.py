@@ -16,7 +16,7 @@ import pandas as pd
 from pydantic import BaseModel
 
 from app.estimation import estimator, features, loaders
-from app.models import DisruptionStatus, IncidentTimeline, TimelinePoint
+from app.models import DisruptionStatus, IncidentTimeline, PublicMessage, TimelinePoint
 
 TZ = loaders.TZ
 DEFAULT_REPLAY_MINUTES = 45  # default moment of a replay: 45 min after the start
@@ -167,3 +167,36 @@ def demo_incidents(limit: int = 20) -> list[dict]:
         })
     return sorted(out, key=lambda d: not d["internal_details"])
 
+
+
+@lru_cache(maxsize=1)
+def _message_versions() -> pd.DataFrame:
+    """Every version of every public message (current state + audit), published only."""
+    v = pd.concat([loaders.load_messages(), loaders.load_message_audit()], ignore_index=True)
+    v = v[v["status"] == "PUBLISHED"]
+    return v.sort_values("last_modified_date")
+
+
+def _text(row: pd.Series, field: str) -> str:
+    """English text, or the first other language that has one."""
+    for lang in ("en", "de", "fr", "it"):
+        val = row.get(f"{field}_{lang}")
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return ""
+
+
+def public_messages(incident_id: str, at: pd.Timestamp | None = None) -> list[PublicMessage]:
+    """Public liveticker messages of an incident as travellers saw them at `at`
+    (latest published version of each message), oldest first."""
+    v = _message_versions()
+    v = v[v["incident_id_fk"] == incident_id]
+    if at is not None:
+        v = v[v["last_modified_date"] <= at]
+    latest = v.drop_duplicates("id", keep="last").sort_values("created_date")
+    out = []
+    for _, row in latest.iterrows():
+        text = _text(row, "message")
+        if text:
+            out.append(PublicMessage(time=row["created_date"].to_pydatetime(), title=_text(row, "title"), text=text))
+    return out

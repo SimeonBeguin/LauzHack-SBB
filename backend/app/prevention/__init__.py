@@ -6,6 +6,4 @@
                   drive through *right now* (TomTom live traffic).
 - bookings.py     idea 2: watch trips paid in advance and warn when a connection
                   is at risk (uses 3 and 4, plus the live incidents).
-
-Frontend integration notes: docs/prevention-frontend-handoff.md
 """

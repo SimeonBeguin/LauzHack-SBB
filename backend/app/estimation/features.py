@@ -9,7 +9,7 @@ Two tables are built from `loaders.load_incident_versions()`:
    what lets the estimator condition on elapsed time and on the current
    announcement, and what makes a live replay possible.
 
-Definitions (checked on the data, see docs/PROJECT_CONTEXT.md section 4):
+Definitions (checked on the data):
 - start     = VIA creation time (`created_at_source`) of the first version.
               For planned FROM_TO events, `duration_from` if later.
 - real_end  = VIA time (`updated_at_source`) of the first `ENDED` version
@@ -254,43 +254,3 @@ def build_snapshots() -> pd.DataFrame:
     real_remaining_min, announced_error_min, snapshot_rank.
     """
     return _snapshots().copy()
-
-
-def state_at(incident_id: str, at: pd.Timestamp) -> pd.Series | None:
-    """The version of `incident_id` in force at time `at` (None if not started)."""
-    s = _snapshots()
-    s = s[(s["incident_id"] == incident_id) & (s["t"] <= at)]
-    return None if s.empty else s.iloc[-1]
-
-
-def similar_incidents(
-    history: pd.DataFrame,
-    reason_id: str,
-    section: str | None = None,
-    kind: str | None = None,
-    min_count: int = 15,
-) -> pd.DataFrame:
-    """Past usable incidents comparable to a new one, most specific first.
-
-    Tries, in order, and returns the first level with at least `min_count` rows:
-    same cause + same kind, same cause, same cause group, all usable incidents.
-    The level used is stored in `df.attrs["level"]`. (`section` is accepted for
-    future use: with ~500 incidents, per-section groups are too small.)
-    """
-    h = history[history["usable"]]
-    group = reason_group(reason_id)
-    levels = []
-    if kind in ("interruption", "restriction"):
-        levels.append(("cause+kind", (h["reason_id"] == reason_id) & (h["kind"] == kind)))
-    levels += [
-        ("cause", h["reason_id"] == reason_id),
-        ("cause_group", h["reason_group"] == group),
-        ("all", pd.Series(True, index=h.index)),
-    ]
-    for name, mask in levels:
-        out = h[mask]
-        if len(out) >= min_count or name == "all":
-            out = out.copy()
-            out.attrs["level"] = name
-            return out
-    raise AssertionError("unreachable")

@@ -210,6 +210,6 @@ de moins en moins jusqu'à 60 minutes.
 
 ## 8. Liens utiles dans le dépôt
 
-- Fonctions de prévention et intégration : [`prevention-frontend-handoff.md`](prevention-frontend-handoff.md)
-- Contexte complet du projet : [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md)
-- Lancer l'app : [`README.md`](../README.md) (sections *Getting started* et *Demo*)
+- Vue d'ensemble, lancement et démo : [`README.md`](../README.md)
+- Backend (API, estimation, itinéraires, alertes) : [`backend/README.md`](../backend/README.md)
+- Frontend (écrans, formule de personnalisation, panneau présentateur) : [`frontend/README.md`](../frontend/README.md)

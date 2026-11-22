@@ -48,7 +48,7 @@ export const getAlerts = (userId = USER_ID) => request<CommuterAlert[]>(`/commut
 
 export const searchStops = (q: string) => request<Stop[]>(`/stops?q=${encodeURIComponent(q)}`);
 
-// --- Prevention (docs/prevention-frontend-handoff.md) ---
+// --- Prevention: reliable plan, bus delay forecast, booked trips ---
 // simulate_jam_minutes: demo traffic jam on every bus leg (presenter control)
 const jam = (m?: number | null) => (m ? `simulate_jam_minutes=${m}` : "");
 

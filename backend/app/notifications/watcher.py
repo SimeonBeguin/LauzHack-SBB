@@ -5,10 +5,13 @@ For each registered trip and each live situation (app/situation.py):
 1. find the commuter's train on that day (OJP search at the usual departure);
 2. if it runs through the blocked section, compute the chance the line is
    still closed when the train gets there (reopening curve of the estimate);
-3. alert when that changes the message (or SBB announces a new end): ``earlier_train`` (a train ahead is
+3. alert when that changes the message (or SBB announces a new end): ``line_disrupted``
+   (the line is cut, mine should still get through), ``earlier_train`` (a train ahead is
    hit, mine may be), ``own_train`` (mine will probably not run), and
-   ``resolved`` once the line reopens. Each alert carries the reasons, the
-   trains on the line and the best alternatives, computed at that moment.
+   ``resolved`` once the line reopens.
+
+Alerts only start 3 h before the usual departure. Each alert carries the reasons,
+the trains on the line and the best alternatives, computed at that moment.
 
 Alerts are stored in memory per user and recomputed whenever the situation
 or the trip changes (``alerts_for``, called by the API).
@@ -39,10 +42,10 @@ from app.routing.service_points import get_stop
 
 log = logging.getLogger(__name__)
 
-WATCH_BEFORE = timedelta(minutes=120)  # start watching this long before the usual departure
+WATCH_BEFORE = timedelta(hours=3)  # start watching this long before the usual departure
 WATCH_AFTER = timedelta(minutes=90)
 P_OWN_TRAIN = 0.7  # chance the line is still closed: "your train will probably not run"
-P_EARLIER = 0.2  # below this, no alert
+P_EARLIER = 0.2  # below this: "disruption on your line", your train should get through
 
 _LOCK = threading.Lock()
 _ALERTS: dict[str, list[CommuterAlert]] = {}  # user_id -> alerts, oldest first
@@ -126,10 +129,11 @@ def check_trip(trip: CommuterTrip, sit: Situation, client: OJPClient | None = No
     estimate = situation_estimate(sit)
     t_in = section_entry_time(train, section) or train.departure_planned
     if sit.resumed:
-        kind, p = ("resolved", None) if prev and prev[0] in ("earlier_train", "own_train") else (None, None)
+        kind, p = ("resolved", None) if prev and prev[0] in ("line_disrupted", "earlier_train", "own_train") \
+            else (None, None)
     else:
         p = round(prob_closed_at(estimate, t_in), 2)
-        kind = "own_train" if p >= P_OWN_TRAIN else "earlier_train" if p >= P_EARLIER else None
+        kind = "own_train" if p >= P_OWN_TRAIN else "earlier_train" if p >= P_EARLIER else "line_disrupted"
     # New alert when the message changes, or when SBB announces a new end time
     if kind is None or (kind, sit.official_end) == prev:
         return None
@@ -151,9 +155,13 @@ def check_trip(trip: CommuterTrip, sit: Situation, client: OJPClient | None = No
     elif kind == "own_train":
         title, headline = f"Your {dep} will probably not run", "Your train will probably not run"
         body = f"No trains between {sit.section} ({end}).{advice_txt}"
-    else:
+    elif kind == "earlier_train":
         title, headline = f"Your {dep} to {dest} may be affected", "Your train may be affected"
         body = f"Trains are stopped between {sit.section} since {_hm(sit.start)}.{advice_txt}"
+    else:
+        title, headline = f"Disruption on your line: {sit.section}", "Your train should get through"
+        body = (f"Trains are stopped between {sit.section} since {_hm(sit.start)} ({end}). "
+                f"Your {dep} to {dest} should not be affected; we keep watching.")
 
     reasons = [f"No trains between {sit.section} since {_hm(sit.start)} ({status.reason or 'disruption'})."]
     if kind == "resolved":
@@ -260,9 +268,3 @@ def reset() -> None:
         _ALERTS.clear()
         _LAST_KIND.clear()
         _CHECKED.clear()
-
-
-def send_push(notification: Notification, push_token: str) -> None:
-    # Not needed for the demo: the app polls /commuters/{user}/alerts and shows
-    # the alerts itself (and as browser notifications).
-    raise NotImplementedError

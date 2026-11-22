@@ -61,7 +61,8 @@ const TABS = [
 
 function TabBar() {
   const { reset, showToast, route } = useStore();
-  const activeId = ["disruption", "list", "details", "connection", "personalize", "plan"].includes(route.name) ? "plan" : "trips";
+  // "Plan" is only the timetable search; everything about my journey stays under "My trips"
+  const activeId = route.name === "plan" ? "plan" : "trips";
   return (
     <nav className="tabbar">
       {TABS.map((t) => {
@@ -70,7 +71,7 @@ function TabBar() {
           <button key={t.id} className={active ? "active" : ""} aria-current={active ? "page" : undefined} aria-label={t.label}
             onClick={() => {
               if (t.id === "trips") reset({ name: "home" });
-              else if (t.id === "plan") reset({ name: "disruption" });
+              else if (t.id === "plan") reset({ name: "plan" });
               else showToast("Not part of this prototype");
             }}>
             <span className="tab-icon"><Icon name={t.icon} size={26} /></span>

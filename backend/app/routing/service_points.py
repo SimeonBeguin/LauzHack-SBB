@@ -140,11 +140,6 @@ def service_points_within_radius(
     return out
 
 
-def stops_within_radius(lat: float, lon: float, radius_km: float, rail_only: bool = False) -> list[Stop]:
-    """Stops within ``radius_km`` of (lat, lon), closest first."""
-    return [p.to_stop() for p, _ in service_points_within_radius(lat, lon, radius_km, rail_only)]
-
-
 def pick_radius_candidates(
     lat: float,
     lon: float,

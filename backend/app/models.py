@@ -119,6 +119,14 @@ class InternalMessage(BaseModel):
     text: str
 
 
+class PublicMessage(BaseModel):
+    """A message of the public liveticker (title + text written by SBB for travellers)."""
+
+    time: datetime
+    title: str
+    text: str
+
+
 class IncidentDetails(BaseModel):
     """'More details' screen: internal SBB info (KULT ticker) matched to a public incident.
 
@@ -139,6 +147,7 @@ class IncidentDetails(BaseModel):
     ticket_goodwill: list[str] = []               # KULANZMASNAHMEN modules
     internal_messages: list[InternalMessage] = []
     internal_lead_minutes: int | None = None      # how much earlier staff were informed than the public
+    public_messages: list[PublicMessage] = []     # public liveticker messages (extern message_*.csv)
 
 
 # ---------------------------------------------------------------------------
@@ -243,7 +252,7 @@ class Notification(BaseModel):
     created_at: datetime
     id: str | None = None
     kind: Literal[
-        "earlier_train", "own_train", "resolved",  # commuter alerts
+        "line_disrupted", "earlier_train", "own_train", "resolved",  # commuter alerts
         "booked_train_disrupted", "connection_broken", "connection_at_risk", "booking_back_to_normal",  # booked trips
     ] | None = None
     probability: float | None = Field(None, ge=0, le=1)  # chance the own train is still hit

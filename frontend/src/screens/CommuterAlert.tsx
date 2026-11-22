@@ -4,7 +4,8 @@
 import { useStore } from "../store";
 import { hhmm } from "../lib/format";
 import { chanceLabel } from "../lib/chance";
-import { CertaintyBadge, ChanceBadge, Header, Icon, LineBadge } from "../components/ui";
+import { ChanceBadge, ConnectionCard, Header, Icon, LineBadge, SectionTitle } from "../components/ui";
+import AdviceCard from "../components/AdviceCard";
 import BookingAlertScreen from "./BookingAlert";
 
 const STATE_LABEL = { stuck: "Stopped", cancelled: "Cancelled", at_risk: "May be affected", ok: "Running" };
@@ -19,9 +20,7 @@ export default function CommuterAlert({ id }: { id: string }) {
   const trip = a.trip;
   const resolved = n.kind === "resolved";
   const [advice, ...others] = a.options;
-  const detail = (o: typeof advice) =>
-    o.uses_blocked_line ? "Only if the line reopens in time"
-      : `${o.transfers === 0 ? "Direct" : `${o.transfers} change${o.transfers > 1 ? "s" : ""}`}, ${o.certainty_reason ?? ""}`;
+  const open = (altId: string) => push({ name: "connection", id: `alert:${n.id}:${altId}` });
 
   return (
     <>
@@ -52,31 +51,17 @@ export default function CommuterAlert({ id }: { id: string }) {
         </section>
 
         {advice && (
-          <section className="card advice">
-            <div className="advice-eyebrow">Our advice</div>
-            <h2 className="advice-title">{advice.title}</h2>
-            <div className="advice-times">
-              <strong>{hhmm(advice.departure)}</strong>
-              <Icon name="arrow" size={18} className="muted" />
-              <strong>{hhmm(advice.arrival)}</strong>
-              <span className="muted small">{detail(advice)}</span>
-            </div>
-            <CertaintyBadge certainty={advice.certainty} />
-            <button className="btn btn-primary" onClick={() => push({ name: "connection", id: `alert:${n.id}:${advice.id}` })}>
-              Show connection
-            </button>
-          </section>
+          <>
+            <h2 className="section-title">Our advice</h2>
+            <AdviceCard alt={advice} deadline={null} onOpen={() => open(advice.id)} />
+          </>
         )}
-
-        {others.map((o) => (
-          <section key={o.id} className="card option-plain">
-            <div>
-              <strong>{o.title}</strong>
-              <div className="muted small">{hhmm(o.departure)} → {hhmm(o.arrival)} · {detail(o)}</div>
-            </div>
-            <CertaintyBadge certainty={o.certainty} />
-          </section>
-        ))}
+        {others.length > 0 && (
+          <>
+            <SectionTitle>Other options</SectionTitle>
+            {others.map((o) => <ConnectionCard key={o.id} alt={o} deadline={null} onOpen={() => open(o.id)} />)}
+          </>
+        )}
 
         <details className="card why">
           <summary>Why are we telling you this? <Icon name="down" size={16} /></summary>

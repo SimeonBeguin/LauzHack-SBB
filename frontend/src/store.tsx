@@ -13,6 +13,7 @@ import {
   type Notification, type Preferences, type Situation, type SituationAction,
 } from "./types";
 import { showOsNotification } from "./lib/osNotifications";
+import { DEMO_TRIP } from "./demo/coppetScenario";
 
 export type Route =
   | { name: "home" }
@@ -55,6 +56,9 @@ interface Store {
   saveTrip: (t: CommuterTrip) => void;
   alerts: CommuterAlert[];
   refreshAlerts: () => void;
+  /** Presenter: show a staged alert (banner, lock screen, OS notification) like a real one. */
+  showDemoAlert: (a: CommuterAlert) => void;
+  clearDemoAlerts: () => void;
   banner: string | null;
   dismissBanner: () => void;
 
@@ -99,8 +103,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [details, setDetails] = useState<IncidentDetails | null>(null);
   const [alternatives, setAlternatives] = useState<AlternativesResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [trips, setTrips] = useState<CommuterTrip[]>([]);
-  const [alerts, setAlerts] = useState<CommuterAlert[]>([]);
+  const [savedTrips, setTrips] = useState<CommuterTrip[]>([]);
+  // the staged Coppet -> Lausanne trip is always registered (presenter alerts attach to it)
+  const trips = useMemo(() => [DEMO_TRIP, ...savedTrips], [savedTrips]);
+  const [backendAlerts, setAlerts] = useState<CommuterAlert[]>([]);
+  const [demoAlerts, setDemoAlerts] = useState<CommuterAlert[]>([]);
+  const alerts = useMemo(() => [...backendAlerts, ...demoAlerts], [backendAlerts, demoAlerts]);
   const [banner, setBanner] = useState<string | null>(null);
   const [bookings, setBookings] = useState<BookedTrip[]>([]);
   const [bookingAlerts, setBookingAlerts] = useState<BookingAlert[]>([]);
@@ -157,6 +165,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }).catch(() => { /* shown through `error` by the other calls */ });
   }, []);
 
+  const showDemoAlert = useCallback((a: CommuterAlert) => {
+    setDemoAlerts((list) => [...list.filter((x) => x.notification.id !== a.notification.id), a]);
+    if (osRef.current) showOsNotification(a.notification);
+    if (routeRef.current.name !== "lock") {
+      setBanner(a.notification.id ?? null);
+      window.clearTimeout(bannerTimer.current);
+      bannerTimer.current = window.setTimeout(() => setBanner(null), 7000);
+    }
+  }, []);
+  const clearDemoAlerts = useCallback(() => setDemoAlerts([]), []);
+
   // Load the situation; retry while the backend is starting (first load can take a while).
   useEffect(() => {
     let alive = true;
@@ -201,7 +220,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const prev = situation;
       const next = await changeSituation(a);
       setSituation(next);
-      if (a.action === "reset") { seenAlerts.current = null; setBanner(null); setJamState(null); jamRef.current = null; }
+      if (a.action === "reset") {
+        // trips added during the demo are gone (only the staged Coppet -> Lausanne trip stays)
+        seenAlerts.current = null; setBanner(null); setJamState(null); jamRef.current = null;
+        setTrips([]); setBookings([]); setAlerts([]); setBookingAlerts([]); setDemoAlerts([]);
+      }
       const fresh = next.updates.length > (prev?.updates.length ?? 0) ? next.updates[next.updates.length - 1] : null;
       if (fresh && a.action !== "reset") showToast(`SBB update: ${fresh.text}`);
       refreshAlerts();
@@ -246,11 +269,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     route, push, back, reset, clock, situation, act, error,
     prefs, setPrefs, sheetOpen, setSheetOpen,
     status, details, alternatives, loading,
-    trips, saveTrip, alerts, refreshAlerts, banner, dismissBanner: () => setBanner(null),
+    trips, saveTrip, alerts, refreshAlerts, showDemoAlert, clearDemoAlerts, banner, dismissBanner: () => setBanner(null),
     bookings, saveBooking, removeBooking, bookingAlerts, jam, setJam, planned, setPlanned, openAlert, findNotification,
     osEnabled, setOsEnabled, toast, showToast,
   }), [route, push, back, reset, clock, situation, act, error, prefs, sheetOpen, status, details, alternatives,
-    loading, trips, saveTrip, alerts, refreshAlerts, banner, bookings, saveBooking, removeBooking, bookingAlerts, jam,
+    loading, trips, saveTrip, alerts, refreshAlerts, showDemoAlert, clearDemoAlerts, banner, bookings, saveBooking, removeBooking, bookingAlerts, jam,
     setJam, planned, openAlert, findNotification, osEnabled, toast, showToast]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
