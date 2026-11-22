@@ -11,9 +11,7 @@ LauzHack 2026, SBB challenge.
 **Step-by-step guide to run and use it: [`GUIDE.md`](GUIDE.md).** Hackathon submission summary: [`SUBMISSION.md`](SUBMISSION.md). 
 Backend: [`backend/README.md`](backend/README.md). Frontend: [`frontend/README.md`](frontend/README.md).
 
-| My trips | Need help | Best for you | Commuter alert |
-|---|---|---|---|
-| ![My trips](docs/img/1-my-trips.png) | ![Need help](docs/img/2-need-help.png) | ![Best for you](docs/img/4-best-for-you.png) | ![Lock screen](docs/img/7-lock-screen.png) |
+![SBB Disruption Helper: My trips, Need help, Details, Best for you and an early-warning notification](docs/img/showcase.png)
 
 ## The problem
 
